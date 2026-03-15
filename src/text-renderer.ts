@@ -6,10 +6,23 @@ import { uid } from './project.js'
 import { loadConfig } from './config.js'
 import type { TextSegment } from './types.js'
 
-const LINE_HEIGHT = 1.0
-
 // Matches emoji, including multi-codepoint sequences (flags, ZWJ combos, skin tones)
 const EMOJI_RE = /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{2300}-\u{23FF}\u{2B50}\u{2934}-\u{2935}\u{25AA}-\u{25FE}\u{2190}-\u{21FF}\u{2702}-\u{27B0}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]/u
+
+// Capture-split on emoji sequences so we can split a line into text/emoji runs
+const EMOJI_SPLIT_RE = /([\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{2300}-\u{23FF}\u{2B50}\u{2934}-\u{2935}\u{25AA}-\u{25FE}\u{2190}-\u{21FF}\u{2702}-\u{27B0}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}]+)/u
+
+type Run = { type: 'text' | 'emoji'; content: string }
+
+function splitRuns(line: string): Run[] {
+  const runs: Run[] = []
+  const parts = line.split(EMOJI_SPLIT_RE)
+  for (const part of parts) {
+    if (!part) continue
+    runs.push({ type: EMOJI_RE.test(part) ? 'emoji' : 'text', content: part })
+  }
+  return runs
+}
 
 let fontRegistered = false
 
@@ -54,27 +67,54 @@ export function renderTextToPng(
   const lineHeight = effectiveSize
   const totalH = lines.length * lineHeight
 
-  // Compute per-line Y offsets. Skia (@napi-rs/canvas) renders emoji glyphs
-  // higher than browser CoreText does. We measure the emoji-only ascent vs
-  // text-only ascent and shift emoji lines down to visually center them.
-  const lineYs = lines.map((line, i) => {
-    let y = yPx - totalH / 2 + lineHeight * (i + 0.5)
-    if (line && EMOJI_RE.test(line)) {
-      const textOnly = line.replace(EMOJI_RE, '').trim()
-      if (textOnly) {
-        const emojiOnly = line.replace(/[^\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{2300}-\u{23FF}\u{2B50}\u{1F900}-\u{1FAFF}]/gu, '').trim()
-        if (emojiOnly) {
-          const textAscent = ctx.measureText(textOnly).actualBoundingBoxAscent
-          const emojiAscent = ctx.measureText(emojiOnly).actualBoundingBoxAscent
-          // Skia renders emoji significantly higher than browser CoreText.
-          // The measured ascent difference understates the visual offset,
-          // so we apply the full ascent difference as compensation.
-          y += emojiAscent - textAscent
-        }
-      }
+  // Compute per-line base Y offsets (no whole-line emoji shift needed here —
+  // emoji alignment is handled run-by-run in drawLine below).
+  const lineYs = lines.map((_, i) => yPx - totalH / 2 + lineHeight * (i + 0.5))
+
+  // Compute emoji vertical offset so emoji glyphs align with text glyphs.
+  // Skia renders emoji higher than text at the same Y.  We split mixed lines
+  // into separate text/emoji runs and push emoji runs down by the difference
+  // between their visual centers (measured via actualBoundingBox metrics).
+  function emojiYOffset(line: string): number {
+    const textOnly = line.replace(EMOJI_RE, '').trim()
+    const emojiOnly = line.replace(/[^\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{2300}-\u{23FF}\u{2B50}\u{1F900}-\u{1FAFF}]/gu, '').trim()
+    if (!textOnly || !emojiOnly) return 0
+    const tm = ctx.measureText(textOnly)
+    const em = ctx.measureText(emojiOnly)
+    // Align emoji top with text top: shift = emojiAscent - textAscent
+    // (Skia places emoji higher than text; this moves emoji down so their
+    // top edges are flush, which looks perceptually correct for inline emoji.)
+    return em.actualBoundingBoxAscent - tm.actualBoundingBoxAscent
+  }
+
+  // Draw a line, splitting mixed text+emoji content into separate runs so
+  // the emoji Y can be independently adjusted without moving the text.
+  function drawLine(line: string, y: number, drawFn: (text: string, x: number, y: number) => void) {
+    const isMixed = EMOJI_RE.test(line) && line.replace(EMOJI_RE, '').trim()
+    if (!isMixed) {
+      drawFn(line, xPx, y)
+      return
     }
-    return y
-  })
+
+    const runs = splitRuns(line)
+    const yShift = emojiYOffset(line)
+    const savedAlign = ctx.textAlign
+    ctx.textAlign = 'left'
+
+    // Measure total width to compute start X for the original alignment
+    const widths = runs.map(r => ctx.measureText(r.content).width)
+    const totalWidth = widths.reduce((s, w) => s + w, 0)
+    let curX = xPx
+    if (savedAlign === 'center') curX = xPx - totalWidth / 2
+    else if (savedAlign === 'right') curX = xPx - totalWidth
+
+    for (let i = 0; i < runs.length; i++) {
+      const runY = runs[i].type === 'emoji' ? y + yShift : y
+      drawFn(runs[i].content, curX, runY)
+      curX += widths[i]
+    }
+    ctx.textAlign = savedAlign
+  }
 
   if (seg.strokeEnabled) {
     ctx.strokeStyle = seg.strokeColor ?? '#000000'
@@ -83,14 +123,14 @@ export function renderTextToPng(
     ctx.lineJoin = 'round'
     lines.forEach((line, i) => {
       if (!line) return
-      ctx.strokeText(line, xPx, lineYs[i])
+      drawLine(line, lineYs[i], (t, x, y) => ctx.strokeText(t, x, y))
     })
   }
 
   ctx.fillStyle = seg.color
   lines.forEach((line, i) => {
     if (!line) return
-    ctx.fillText(line, xPx, lineYs[i])
+    drawLine(line, lineYs[i], (t, x, y) => ctx.fillText(t, x, y))
   })
 
   const pngPath = join(tmpdir(), `text_${uid()}.png`)
