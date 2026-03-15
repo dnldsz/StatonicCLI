@@ -180,7 +180,9 @@ export function renderPreview(project: Project, timeSec?: number, outputPath?: s
     '-f', 'lavfi', '-i', `color=c=black:s=${canvas.width}x${canvas.height}:r=30`,
   ]
   for (const { seg } of activeVideo) {
-    const seekTime = Math.max(0, seg.sourceStartUs / 1e6 + (timeSec! - seg.startUs / 1e6))
+    // Round to ms precision to avoid floating-point noise (e.g. 5.3-4.2=1.0999...96)
+    // which causes ffmpeg to land on a black keyframe for some clips.
+    const seekTime = Math.max(0, Math.round((seg.sourceStartUs / 1e6 + (timeSec! - seg.startUs / 1e6)) * 1000) / 1000)
     ffArgs.push('-ss', String(seekTime), '-i', seg.src)
   }
 
@@ -259,6 +261,9 @@ export function renderPreview(project: Project, timeSec?: number, outputPath?: s
   ffArgs.push(...emojiPngInputs)
 
   const tmp = outputPath ?? join(tmpdir(), `preview_${uid()}.jpg`)
+  // -hwaccel none forces software decode: @napi-rs/canvas holds Metal GPU
+  // resources that conflict with ffmpeg's VideoToolbox hardware decoder,
+  // causing black frames when both run in the same process.
   const r = spawnSync('ffmpeg', [
     '-y', ...ffArgs,
     '-filter_complex', fp.join(';'),

@@ -81,10 +81,10 @@ export function renderTextToPng(
     if (!textOnly || !emojiOnly) return 0
     const tm = ctx.measureText(textOnly)
     const em = ctx.measureText(emojiOnly)
-    // Align emoji top with text top: shift = emojiAscent - textAscent
-    // (Skia places emoji higher than text; this moves emoji down so their
-    // top edges are flush, which looks perceptually correct for inline emoji.)
-    return em.actualBoundingBoxAscent - tm.actualBoundingBoxAscent
+    // Shift emoji down so it sits inline with the text.
+    // Full top-alignment (emojiAscent - textAscent) overshoots; 0.72x gives
+    // the perceptually correct inline position for mixed caps + emoji.
+    return (em.actualBoundingBoxAscent - tm.actualBoundingBoxAscent) * 0.72
   }
 
   // Draw a line, splitting mixed text+emoji content into separate runs so
