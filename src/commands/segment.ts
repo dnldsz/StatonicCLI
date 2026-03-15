@@ -79,7 +79,7 @@ export function cmdSegmentAddText(args: string[]): void {
     color: opts.color ?? '#ffffff',
     bold: opts.bold === 'true',
     italic: opts.italic === 'true',
-    strokeEnabled: opts['stroke-enabled'] === 'true',
+    strokeEnabled: opts['stroke-enabled'] !== 'false',
     strokeColor: opts['stroke-color'] ?? '#000000',
     textAlign: (opts['text-align'] as 'left' | 'center' | 'right') ?? 'center',
     textScale: 1,

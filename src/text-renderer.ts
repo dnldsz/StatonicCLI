@@ -118,8 +118,7 @@ export function renderTextToPng(
 
   if (seg.strokeEnabled) {
     ctx.strokeStyle = seg.strokeColor ?? '#000000'
-    const bw = Math.max(1, Math.round(Math.sqrt(effectiveSize) * 0.55))
-    ctx.lineWidth = bw * 2.5
+    ctx.lineWidth = Math.max(1, effectiveSize * 0.12)
     ctx.lineJoin = 'round'
     lines.forEach((line, i) => {
       if (!line) return

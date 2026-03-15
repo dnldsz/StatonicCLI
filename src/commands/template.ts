@@ -118,7 +118,7 @@ export function cmdTemplateUse(args: string[]): void {
         x: 0, y: slot.text?.y ?? 0.28,
         fontSize: slot.text?.fontSize ?? 85,
         color: '#ffffff', bold: false, italic: false,
-        strokeEnabled: false, strokeColor: '#000000',
+        strokeEnabled: true, strokeColor: '#000000',
         textAlign: 'center', textScale: 1,
       })
     }
