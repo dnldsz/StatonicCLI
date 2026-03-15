@@ -54,6 +54,25 @@ export function renderTextToPng(
   const lineHeight = effectiveSize
   const totalH = lines.length * lineHeight
 
+  // Compute per-line Y offsets. Skia (@napi-rs/canvas) renders emoji glyphs
+  // higher than browser CoreText does. We measure the emoji-only ascent vs
+  // text-only ascent and shift emoji lines down to visually center them.
+  const lineYs = lines.map((line, i) => {
+    let y = yPx - totalH / 2 + lineHeight * (i + 0.5)
+    if (line && EMOJI_RE.test(line)) {
+      const textOnly = line.replace(EMOJI_RE, '').trim()
+      if (textOnly) {
+        const emojiOnly = line.replace(/[^\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{2300}-\u{23FF}\u{2B50}\u{1F900}-\u{1FAFF}]/gu, '').trim()
+        if (emojiOnly) {
+          const textAscent = ctx.measureText(textOnly).actualBoundingBoxAscent
+          const emojiAscent = ctx.measureText(emojiOnly).actualBoundingBoxAscent
+          y += (emojiAscent - textAscent) / 2
+        }
+      }
+    }
+    return y
+  })
+
   if (seg.strokeEnabled) {
     ctx.strokeStyle = seg.strokeColor ?? '#000000'
     const bw = Math.max(1, Math.round(Math.sqrt(effectiveSize) * 0.55))
@@ -61,14 +80,14 @@ export function renderTextToPng(
     ctx.lineJoin = 'round'
     lines.forEach((line, i) => {
       if (!line) return
-      ctx.strokeText(line, xPx, yPx - totalH / 2 + lineHeight * (i + 0.5))
+      ctx.strokeText(line, xPx, lineYs[i])
     })
   }
 
   ctx.fillStyle = seg.color
   lines.forEach((line, i) => {
     if (!line) return
-    ctx.fillText(line, xPx, yPx - totalH / 2 + lineHeight * (i + 0.5))
+    ctx.fillText(line, xPx, lineYs[i])
   })
 
   const pngPath = join(tmpdir(), `text_${uid()}.png`)
