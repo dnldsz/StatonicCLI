@@ -52,12 +52,13 @@ export function renderTextToPng(
   const weight = seg.bold ? 'bold' : 'normal'
   const style = seg.italic ? 'italic' : 'normal'
   ctx.font = `${style} ${weight} ${fs}px ${fontFamily}, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`
-  ctx.textBaseline = 'top'
+  ctx.textBaseline = 'middle'
   ctx.textAlign = seg.textAlign || 'center'
 
   for (let li = 0; li < lines.length; li++) {
     if (!lines[li]) continue
-    const lineY = py - Math.round(totalH / 2) + Math.round(lineH * li)
+    // Use middle baseline: center of each line = top + lineH * (li + 0.5)
+    const lineY = py - Math.round(totalH / 2) + Math.round(lineH * (li + 0.5))
     const x = px
 
     // Stroke — tuned to match FFmpeg drawtext borderw rendering.
