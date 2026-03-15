@@ -84,7 +84,7 @@ export function renderTextToPng(
     // Shift emoji down so it sits inline with the text.
     // Full top-alignment (emojiAscent - textAscent) overshoots; 0.72x gives
     // the perceptually correct inline position for mixed caps + emoji.
-    return (em.actualBoundingBoxAscent - tm.actualBoundingBoxAscent) * 0.60
+    return (em.actualBoundingBoxAscent - tm.actualBoundingBoxAscent) * 0.55
   }
 
   // Draw a line, splitting mixed text+emoji content into separate runs so
