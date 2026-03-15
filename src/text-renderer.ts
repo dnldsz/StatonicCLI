@@ -66,7 +66,7 @@ export function renderTextToPng(
     if (seg.strokeEnabled) {
       const bw = Math.max(1, Math.round(Math.sqrt(fs) * 0.55))
       ctx.strokeStyle = seg.strokeColor
-      ctx.lineWidth = bw * 3
+      ctx.lineWidth = bw * 2
       ctx.lineJoin = 'round'
       ctx.miterLimit = 2
       ctx.strokeText(lines[li], x, lineY)
