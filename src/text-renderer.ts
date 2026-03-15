@@ -29,10 +29,8 @@ export function hasEmoji(text: string): boolean {
 
 /**
  * Render a text segment to a full-canvas transparent PNG.
- * Matches the drawtext styling exactly:
- * - strokeEnabled: sub-linear black outline (sqrt(fs) * 0.55)
- * - !strokeEnabled: subtle same-color border (borderw=2) for heavier font weight
- * - textBaseline 'top' to match drawtext y positioning
+ * Ported from iterate-editor's renderTextToPng (App.tsx) which handles
+ * emoji inline with text using textBaseline 'middle'.
  */
 export function renderTextToPng(
   seg: TextSegment,
@@ -43,51 +41,34 @@ export function renderTextToPng(
   const canvas = createCanvas(canvasW, canvasH)
   const ctx = canvas.getContext('2d')
 
-  const fs = Math.round(seg.fontSize * (seg.textScale ?? 1))
-  const lines = seg.text.split('\n')
-  const lineH = Math.round(fs * LINE_HEIGHT)
-  const totalH = lines.length * lineH
-
-  const px = Math.round((seg.x + 1) / 2 * canvasW)
-  const py = Math.round((1 - seg.y) / 2 * canvasH)
-
+  const effectiveSize = seg.fontSize * (seg.textScale ?? 1)
   const weight = seg.bold ? 'bold' : 'normal'
   const style = seg.italic ? 'italic' : 'normal'
-  ctx.font = `${style} ${weight} ${fs}px ${fontFamily}, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`
-  ctx.textBaseline = 'top'
+  ctx.font = `${style} ${weight} ${effectiveSize}px ${fontFamily}, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`
+  ctx.textBaseline = 'middle'
   ctx.textAlign = seg.textAlign || 'center'
 
-  for (let li = 0; li < lines.length; li++) {
-    if (!lines[li]) continue
-    // Same Y calc as drawtext: top of line.
-    // Emoji glyphs have a taller ascent than Latin text, so they float above
-    // the text baseline. Nudge lines with emoji down to visually center them.
-    let lineY = py - Math.round(totalH / 2) + Math.round(lineH * li)
-    if (EMOJI_RE.test(lines[li])) {
-      lineY += Math.round(fs * 0.15)
-    }
-    const x = px
+  const xPx = ((seg.x + 1) / 2) * canvasW
+  const yPx = ((1 - seg.y) / 2) * canvasH
+  const lines = seg.text.split('\n')
+  const lineHeight = effectiveSize
+  const totalH = lines.length * lineHeight
 
+  if (seg.strokeEnabled) {
+    ctx.strokeStyle = seg.strokeColor ?? '#000000'
+    ctx.lineWidth = effectiveSize * (6.9 / 97.0) * 2.3
     ctx.lineJoin = 'round'
-    ctx.miterLimit = 2
-
-    if (seg.strokeEnabled) {
-      // Sub-linear scaling matching drawtext:
-      // borderw = sqrt(fs) * 0.55 → canvas needs borderw * 2 (total width vs per-side)
-      const bw = Math.max(1, Math.round(Math.sqrt(fs) * 0.55))
-      ctx.strokeStyle = seg.strokeColor
-      ctx.lineWidth = bw * 2
-      ctx.strokeText(lines[li], x, lineY)
-    } else {
-      // Subtle same-color border for heavier font weight (matches drawtext borderw=2)
-      ctx.strokeStyle = seg.color
-      ctx.lineWidth = 4
-      ctx.strokeText(lines[li], x, lineY)
-    }
-
-    ctx.fillStyle = seg.color
-    ctx.fillText(lines[li], x, lineY)
+    lines.forEach((line, i) => {
+      if (!line) return
+      ctx.strokeText(line, xPx, yPx - totalH / 2 + lineHeight * (i + 0.5))
+    })
   }
+
+  ctx.fillStyle = seg.color
+  lines.forEach((line, i) => {
+    if (!line) return
+    ctx.fillText(line, xPx, yPx - totalH / 2 + lineHeight * (i + 0.5))
+  })
 
   const pngPath = join(tmpdir(), `text_${uid()}.png`)
   writeFileSync(pngPath, canvas.toBuffer('image/png'))
