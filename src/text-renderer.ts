@@ -66,7 +66,10 @@ export function renderTextToPng(
         if (emojiOnly) {
           const textAscent = ctx.measureText(textOnly).actualBoundingBoxAscent
           const emojiAscent = ctx.measureText(emojiOnly).actualBoundingBoxAscent
-          y += (emojiAscent - textAscent) / 2
+          // Skia renders emoji significantly higher than browser CoreText.
+          // The measured ascent difference understates the visual offset,
+          // so we apply the full ascent difference as compensation.
+          y += emojiAscent - textAscent
         }
       }
     }
