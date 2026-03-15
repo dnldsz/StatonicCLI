@@ -204,7 +204,7 @@ export function renderPreview(project: Project, timeSec?: number, outputPath?: s
     const visH = Math.max(2, Math.round(fullH * cH / 2) * 2)
     const cropFilter = (cropL > 0 || cropR > 0 || cropT > 0 || cropB > 0)
       ? `crop=iw*${cW}:ih*${cH}:iw*${cropL}:ih*${cropT},` : ''
-    fp.push(`[${i + 1}:v]${cropFilter}scale=${visW}:${visH}[sv${i}]`)
+    fp.push(`[${i + 1}:v]setpts=PTS-STARTPTS,${cropFilter}scale=${visW}:${visH}[sv${i}]`)
   }
 
   // Step 2: overlay onto canvas
