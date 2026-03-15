@@ -221,41 +221,42 @@ export function renderPreview(project: Project, timeSec?: number, outputPath?: s
     cur = out
   }
 
-  // Step 3: text segments — emoji text uses PNG overlay, plain text uses drawtext
+  // Step 3: text — drawtext for plain text, full-canvas PNG overlay for emoji text
   const fontFile = getFontFile()
-  const emojiTexts: TextSegment[] = []
-  const plainTexts: TextSegment[] = []
+  const allDrawtexts: string[] = []
+  const emojiPngInputs: string[] = []
+  const emojiPngCount: number[] = [] // track which segments are emoji
+
   for (const t of activeText) {
-    if (hasEmoji(t.text)) emojiTexts.push(t)
-    else plainTexts.push(t)
+    if (hasEmoji(t.text)) {
+      // Render entire text segment (text + emoji) to PNG via canvas
+      const pngPath = renderTextToPng(t, canvas.width, canvas.height)
+      emojiPngInputs.push('-i', pngPath)
+    } else {
+      allDrawtexts.push(...buildDrawtextFilters(t, canvas.width, canvas.height, fontFile))
+    }
   }
 
-  // 3a: drawtext for plain text
-  const allDrawtexts: string[] = []
-  for (const t of plainTexts) {
-    allDrawtexts.push(...buildDrawtextFilters(t, canvas.width, canvas.height, fontFile))
-  }
+  // Apply drawtext filters for plain text
   for (let i = 0; i < allDrawtexts.length; i++) {
     const out = `[dt${i}]`
     fp.push(`${cur}${allDrawtexts[i]}${out}`)
     cur = out
   }
 
-  // 3b: PNG overlay for emoji text
-  const emojiPngPaths: string[] = []
-  for (let i = 0; i < emojiTexts.length; i++) {
-    const pngPath = renderTextToPng(emojiTexts[i], canvas.width, canvas.height)
-    emojiPngPaths.push(pngPath)
-    const inputIdx = ffArgs.length / 2 // approximate — we'll add properly
-    ffArgs.push('-i', pngPath)
-    const emojiInputIdx = 1 + activeVideo.length + i
+  // Apply full-canvas PNG overlays for emoji text
+  for (let i = 0; i < emojiPngInputs.length / 2; i++) {
+    const inputIdx = 1 + activeVideo.length + i
     const out = `[emoji${i}]`
-    fp.push(`${cur}[${emojiInputIdx}:v]overlay=0:0${out}`)
+    fp.push(`${cur}[${inputIdx}:v]overlay=0:0${out}`)
     cur = out
   }
 
   // Step 4: output at full resolution
   fp.push(`${cur}null[out]`)
+
+  // Add emoji PNG inputs to ffmpeg args
+  ffArgs.push(...emojiPngInputs)
 
   const tmp = outputPath ?? join(tmpdir(), `preview_${uid()}.jpg`)
   const r = spawnSync('ffmpeg', [
@@ -454,23 +455,27 @@ export function exportVideo(
     currentIn = outLabel
   }
 
-  // Step 3: text segments — emoji text uses PNG overlay, plain text uses drawtext
-  const emojiTextSegs: Array<{ seg: TextSegment; trackIdx: number }> = []
-  const plainTextSegs: Array<{ seg: TextSegment; trackIdx: number }> = []
-  for (const entry of allTextSegs) {
-    if (hasEmoji(entry.seg.text)) emojiTextSegs.push(entry)
-    else plainTextSegs.push(entry)
-  }
+  // Step 3: text — drawtext for plain text, full-canvas PNG overlay for emoji text
+  const allDrawtexts: string[] = []
+  const emojiPngInputs: string[] = []
+  const emojiPngEnables: string[] = []
 
-  // 3a: drawtext for plain text
-  if (plainTextSegs.length > 0) {
-    const allDrawtexts: string[] = []
-    for (const { seg: t } of plainTextSegs) {
-      const startFrame = Math.round(t.startUs / 1e6 * FPS)
-      const endFrame = Math.round((t.startUs + t.durationUs) / 1e6 * FPS) - 1
-      const enable = `enable='between(n\\,${startFrame}\\,${endFrame})'`
+  for (const { seg: t } of allTextSegs) {
+    const startFrame = Math.round(t.startUs / 1e6 * FPS)
+    const endFrame = Math.round((t.startUs + t.durationUs) / 1e6 * FPS) - 1
+    const enable = `enable='between(n\\,${startFrame}\\,${endFrame})'`
+
+    if (hasEmoji(t.text)) {
+      const pngPath = renderTextToPng(t, canvas.width, canvas.height)
+      emojiPngInputs.push('-i', pngPath)
+      emojiPngEnables.push(enable)
+    } else {
       allDrawtexts.push(...buildDrawtextFilters(t, canvas.width, canvas.height, fontFile, enable))
     }
+  }
+
+  // Apply drawtext filters for plain text
+  if (allDrawtexts.length > 0) {
     for (let i = 0; i < allDrawtexts.length; i++) {
       const outLabel = `[dt${i}]`
       filterParts.push(`${currentIn}${allDrawtexts[i]}${outLabel}`)
@@ -478,18 +483,11 @@ export function exportVideo(
     }
   }
 
-  // 3b: PNG overlay for emoji text segments
-  const emojiPngInputs: string[] = []
-  for (let i = 0; i < emojiTextSegs.length; i++) {
-    const { seg: t } = emojiTextSegs[i]
-    const pngPath = renderTextToPng(t, canvas.width, canvas.height)
-    const emojiInputIdx = 1 + allVideoSegs.length + i
-    emojiPngInputs.push('-i', pngPath)
-    const startFrame = Math.round(t.startUs / 1e6 * FPS)
-    const endFrame = Math.round((t.startUs + t.durationUs) / 1e6 * FPS) - 1
-    const enable = `enable='between(n\\,${startFrame}\\,${endFrame})'`
+  // Apply full-canvas PNG overlays for emoji text
+  for (let i = 0; i < emojiPngInputs.length / 2; i++) {
+    const inputIdx = 1 + allVideoSegs.length + i
     const outLabel = `[epng${i}]`
-    filterParts.push(`${currentIn}[${emojiInputIdx}:v]overlay=0:0:${enable}${outLabel}`)
+    filterParts.push(`${currentIn}[${inputIdx}:v]overlay=0:0:${emojiPngEnables[i]}${outLabel}`)
     currentIn = outLabel
   }
 
@@ -513,7 +511,7 @@ export function exportVideo(
   let audioFilter = ''
 
   if (audioSegs.length > 0) {
-    const audioInputStartIdx = 1 + allVideoSegs.length + emojiTextSegs.length
+    const audioInputStartIdx = 1 + allVideoSegs.length + emojiPngInputs.length / 2
     for (const seg of audioSegs) {
       audioArgs.push(
         '-ss', String(seg.sourceStartUs / 1_000_000),
