@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { uid } from './project.js'
 import { loadConfig } from './config.js'
+import { hasEmoji, renderTextToPng } from './text-renderer.js'
 import type { Project, VideoSegment, TextSegment, ScaleKeyframe } from './types.js'
 
 // ── Basic video utilities ────────────────────────────────────────────────────
@@ -220,15 +221,36 @@ export function renderPreview(project: Project, timeSec?: number, outputPath?: s
     cur = out
   }
 
-  // Step 3: drawtext for each text segment — one filter per line for correct spacing
+  // Step 3: text segments — emoji text uses PNG overlay, plain text uses drawtext
   const fontFile = getFontFile()
-  const allDrawtexts: string[] = []
+  const emojiTexts: TextSegment[] = []
+  const plainTexts: TextSegment[] = []
   for (const t of activeText) {
+    if (hasEmoji(t.text)) emojiTexts.push(t)
+    else plainTexts.push(t)
+  }
+
+  // 3a: drawtext for plain text
+  const allDrawtexts: string[] = []
+  for (const t of plainTexts) {
     allDrawtexts.push(...buildDrawtextFilters(t, canvas.width, canvas.height, fontFile))
   }
   for (let i = 0; i < allDrawtexts.length; i++) {
-    const out = i === allDrawtexts.length - 1 ? '[txtout]' : `[txt${i}]`
+    const out = `[dt${i}]`
     fp.push(`${cur}${allDrawtexts[i]}${out}`)
+    cur = out
+  }
+
+  // 3b: PNG overlay for emoji text
+  const emojiPngPaths: string[] = []
+  for (let i = 0; i < emojiTexts.length; i++) {
+    const pngPath = renderTextToPng(emojiTexts[i], canvas.width, canvas.height)
+    emojiPngPaths.push(pngPath)
+    const inputIdx = ffArgs.length / 2 // approximate — we'll add properly
+    ffArgs.push('-i', pngPath)
+    const emojiInputIdx = 1 + activeVideo.length + i
+    const out = `[emoji${i}]`
+    fp.push(`${cur}[${emojiInputIdx}:v]overlay=0:0${out}`)
     cur = out
   }
 
@@ -432,30 +454,47 @@ export function exportVideo(
     currentIn = outLabel
   }
 
-  // Step 3: drawtext for text segments — one filter per line for correct spacing
-  if (allTextSegs.length > 0) {
+  // Step 3: text segments — emoji text uses PNG overlay, plain text uses drawtext
+  const emojiTextSegs: Array<{ seg: TextSegment; trackIdx: number }> = []
+  const plainTextSegs: Array<{ seg: TextSegment; trackIdx: number }> = []
+  for (const entry of allTextSegs) {
+    if (hasEmoji(entry.seg.text)) emojiTextSegs.push(entry)
+    else plainTextSegs.push(entry)
+  }
+
+  // 3a: drawtext for plain text
+  if (plainTextSegs.length > 0) {
     const allDrawtexts: string[] = []
-    for (const { seg: t } of allTextSegs) {
-      // Use frame numbers with between(n, start, end-1) for clean boundaries.
-      // between() is inclusive on both ends, so end-1 means the text disappears
-      // exactly on the frame where the next text starts.
+    for (const { seg: t } of plainTextSegs) {
       const startFrame = Math.round(t.startUs / 1e6 * FPS)
       const endFrame = Math.round((t.startUs + t.durationUs) / 1e6 * FPS) - 1
       const enable = `enable='between(n\\,${startFrame}\\,${endFrame})'`
       allDrawtexts.push(...buildDrawtextFilters(t, canvas.width, canvas.height, fontFile, enable))
     }
     for (let i = 0; i < allDrawtexts.length; i++) {
-      const outLabel = i === allDrawtexts.length - 1 ? '[vout]' : `[dt${i}]`
+      const outLabel = `[dt${i}]`
       filterParts.push(`${currentIn}${allDrawtexts[i]}${outLabel}`)
       currentIn = outLabel
     }
-  } else if (allVideoSegs.length > 0) {
-    // Rename last overlay to vout if no text
-    // Already handled above when allTextSegs.length === 0
   }
 
-  // If no text and the last overlay label isn't [vout], add null filter
-  if (allTextSegs.length === 0 && currentIn !== '[vout]') {
+  // 3b: PNG overlay for emoji text segments
+  const emojiPngInputs: string[] = []
+  for (let i = 0; i < emojiTextSegs.length; i++) {
+    const { seg: t } = emojiTextSegs[i]
+    const pngPath = renderTextToPng(t, canvas.width, canvas.height)
+    const emojiInputIdx = 1 + allVideoSegs.length + i
+    emojiPngInputs.push('-i', pngPath)
+    const startFrame = Math.round(t.startUs / 1e6 * FPS)
+    const endFrame = Math.round((t.startUs + t.durationUs) / 1e6 * FPS) - 1
+    const enable = `enable='between(n\\,${startFrame}\\,${endFrame})'`
+    const outLabel = `[epng${i}]`
+    filterParts.push(`${currentIn}[${emojiInputIdx}:v]overlay=0:0:${enable}${outLabel}`)
+    currentIn = outLabel
+  }
+
+  // Finalize video output
+  if (currentIn !== '[vout]') {
     filterParts.push(`${currentIn}null[vout]`)
   }
 
@@ -474,7 +513,7 @@ export function exportVideo(
   let audioFilter = ''
 
   if (audioSegs.length > 0) {
-    const audioInputStartIdx = 1 + allVideoSegs.length
+    const audioInputStartIdx = 1 + allVideoSegs.length + emojiTextSegs.length
     for (const seg of audioSegs) {
       audioArgs.push(
         '-ss', String(seg.sourceStartUs / 1_000_000),
@@ -509,6 +548,7 @@ export function exportVideo(
   const args = [
     '-y',
     ...inputs,
+    ...emojiPngInputs,
     ...audioArgs,
     '-filter_complex', filterComplex,
     '-map', '[vout]',
