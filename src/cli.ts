@@ -13,6 +13,7 @@ import { cmdVariationCreate } from './commands/variation.js'
 import { cmdMigrate } from './commands/migrate.js'
 import { cmdTelegram } from './commands/telegram.js'
 import { cmdReelDownload, cmdReelDetect, cmdReelAnalyze, cmdReelBatch, cmdReelInspect, cmdReelInsights, cmdReelTop } from './commands/reel.js'
+import { cmdVideoBuild, cmdVideoPreview } from './commands/video.js'
 
 const HELP = `statonic — headless video editor CLI
 
@@ -61,11 +62,15 @@ ACCOUNTS:
   account set <id>
   account create <name>
 
+VIDEO:
+  video build <template-id> [--name "..."] [--topic "..."] [--hook <clip-id>] [--gizmo <clip-id>] [--no-telegram]
+  video preview <project-path> [--telegram] [--times 1,3,5]
+
 REEL ANALYSIS:
   reel download <url> [--views <n>] [--company <name>]
   reel detect <id-or-path> [--threshold <0.3>]
   reel analyze <id> [--json '<analysis>']
-  reel batch <csv-or-xlsx> [--limit <n>] [--min-views <n>] [--company <name>]
+  reel batch <csv-or-xlsx> [--limit <n>] [--min-views <n>] [--max-views <n>] [--company <name>]
   reel inspect <id>
   reel insights
   reel top [--min-views <n>] [--limit <n>]
@@ -158,6 +163,14 @@ async function main(): Promise<void> {
         case 'set': return cmdAccountSet(rest)
         case 'create': return cmdAccountCreate(rest)
         default: console.error(`Unknown account subcommand: ${sub}`); process.exit(1)
+      }
+      break
+
+    case 'video':
+      switch (sub) {
+        case 'build':   return cmdVideoBuild(rest)
+        case 'preview': return cmdVideoPreview(rest)
+        default: console.error(`Unknown video subcommand: ${sub}`); process.exit(1)
       }
       break
 

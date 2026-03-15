@@ -239,16 +239,18 @@ export function cmdReelAnalyze(args: string[]): void {
 export function cmdReelBatch(args: string[]): void {
   const filePath = args[0]
   if (!filePath) {
-    console.error('Usage: statonic reel batch <csv-or-xlsx> [--limit <n>] [--min-views <n>] [--company <name>]')
+    console.error('Usage: statonic reel batch <csv-or-xlsx> [--limit <n>] [--min-views <n>] [--max-views <n>] [--company <name>]')
     process.exit(1)
   }
 
   let limit = Infinity
   let minViews = 0
+  let maxViews = Infinity
   let filterCompany = ''
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--limit' && args[i + 1]) limit = parseInt(args[++i])
     if (args[i] === '--min-views' && args[i + 1]) minViews = parseInt(args[++i])
+    if (args[i] === '--max-views' && args[i + 1]) maxViews = parseInt(args[++i])
     if (args[i] === '--company' && args[i + 1]) filterCompany = args[++i].toLowerCase()
   }
 
@@ -272,9 +274,14 @@ export function cmdReelBatch(args: string[]): void {
   // Filter
   if (filterCompany) rows = rows.filter(r => r.company.toLowerCase().includes(filterCompany))
   if (minViews > 0) rows = rows.filter(r => r.views >= minViews)
+  if (maxViews < Infinity) rows = rows.filter(r => r.views <= maxViews)
 
-  // Sort by views desc
-  rows.sort((a, b) => b.views - a.views)
+  // Sort by views desc (or asc when max-views filter used, to surface worst first)
+  if (maxViews < Infinity && minViews === 0) {
+    rows.sort((a, b) => a.views - b.views)
+  } else {
+    rows.sort((a, b) => b.views - a.views)
+  }
 
   if (limit < rows.length) rows = rows.slice(0, limit)
 
