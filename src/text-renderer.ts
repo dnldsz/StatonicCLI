@@ -29,8 +29,10 @@ export function hasEmoji(text: string): boolean {
 
 /**
  * Render a text segment to a full-canvas transparent PNG.
- * Uses the same font as drawtext with stroke rendering tuned to match
- * FFmpeg's borderw output. Emoji render inline via system emoji fonts.
+ * Matches the drawtext styling exactly:
+ * - strokeEnabled: sub-linear black outline (sqrt(fs) * 0.55)
+ * - !strokeEnabled: subtle same-color border (borderw=2) for heavier font weight
+ * - textBaseline 'top' to match drawtext y positioning
  */
 export function renderTextToPng(
   seg: TextSegment,
@@ -52,30 +54,34 @@ export function renderTextToPng(
   const weight = seg.bold ? 'bold' : 'normal'
   const style = seg.italic ? 'italic' : 'normal'
   ctx.font = `${style} ${weight} ${fs}px ${fontFamily}, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`
-  ctx.textBaseline = 'middle'
+  ctx.textBaseline = 'top'
   ctx.textAlign = seg.textAlign || 'center'
 
   for (let li = 0; li < lines.length; li++) {
     if (!lines[li]) continue
-    // Use middle baseline: center of each line = top + lineH * (li + 0.5)
-    const lineY = py - Math.round(totalH / 2) + Math.round(lineH * (li + 0.5))
+    // Same Y calc as drawtext: top of line.
+    // Emoji glyphs have a taller ascent than Latin text, so they float above
+    // the text baseline. Nudge lines with emoji down to visually center them.
+    let lineY = py - Math.round(totalH / 2) + Math.round(lineH * li)
+    if (EMOJI_RE.test(lines[li])) {
+      lineY += Math.round(fs * 0.15)
+    }
     const x = px
 
-    // Stroke — tuned to match FFmpeg drawtext borderw rendering.
-    // borderw = sqrt(fs) * 0.55, canvas lineWidth = borderw * 3 for visual match.
+    ctx.lineJoin = 'round'
+    ctx.miterLimit = 2
+
     if (seg.strokeEnabled) {
+      // Sub-linear scaling matching drawtext:
+      // borderw = sqrt(fs) * 0.55 → canvas needs borderw * 2 (total width vs per-side)
       const bw = Math.max(1, Math.round(Math.sqrt(fs) * 0.55))
       ctx.strokeStyle = seg.strokeColor
       ctx.lineWidth = bw * 2
-      ctx.lineJoin = 'round'
-      ctx.miterLimit = 2
       ctx.strokeText(lines[li], x, lineY)
     } else {
-      // Subtle same-color border for font weight (matches drawtext borderw=2)
+      // Subtle same-color border for heavier font weight (matches drawtext borderw=2)
       ctx.strokeStyle = seg.color
       ctx.lineWidth = 4
-      ctx.lineJoin = 'round'
-      ctx.miterLimit = 2
       ctx.strokeText(lines[li], x, lineY)
     }
 
