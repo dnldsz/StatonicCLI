@@ -8,7 +8,7 @@ import {
   getTemplatesDir, getActiveAccountId, getClipLibraryDir,
   getProjectsDir, loadConfig,
 } from '../config.js'
-import { uid, saveProject, readProject } from '../project.js'
+import { uid, saveProject, readProject, snapToFrame } from '../project.js'
 import { renderPreview } from '../ffmpeg.js'
 
 // ─── Telegram helper (same logic as telegram.ts but callable internally) ───
@@ -216,8 +216,8 @@ export function cmdVideoBuild(args: string[]): void {
 
   for (const slot of template.slots) {
     const override = slotOverrides.find(o => o.slot_id === slot.slot_id)
-    const startUs    = Math.round(slot.start_sec * 1e6)
-    const durationUs = Math.round(slot.duration_sec * 1e6)
+    const startUs    = snapToFrame(Math.round(slot.start_sec * 1e6))
+    const durationUs = snapToFrame(Math.round(slot.duration_sec * 1e6))
 
     const clip = pickClip(byCategory, slot.clip_category, override?.clip_id)
     if (clip) {

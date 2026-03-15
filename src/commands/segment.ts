@@ -1,4 +1,4 @@
-import { readProject, saveProject, findSegment, uid } from '../project.js'
+import { readProject, saveProject, findSegment, uid, snapToFrame } from '../project.js'
 import type { TextSegment, Track } from '../types.js'
 
 export function cmdSegmentUpdate(args: string[]): void {
@@ -71,8 +71,8 @@ export function cmdSegmentAddText(args: string[]): void {
     id: uid(),
     type: 'text',
     text: opts.text,
-    startUs: Math.round(parseFloat(opts.start) * 1e6),
-    durationUs: Math.round(parseFloat(opts.duration) * 1e6),
+    startUs: snapToFrame(Math.round(parseFloat(opts.start) * 1e6)),
+    durationUs: snapToFrame(Math.round(parseFloat(opts.duration) * 1e6)),
     x: parseFloat(opts.x ?? '0'),
     y: parseFloat(opts.y ?? '0'),
     fontSize: parseInt(opts['font-size'] ?? '80'),

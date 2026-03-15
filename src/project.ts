@@ -6,6 +6,11 @@ export function uid(): string {
   return randomBytes(4).toString('hex')
 }
 
+/** Snap a microsecond timestamp to the nearest frame boundary at the given fps. */
+export function snapToFrame(us: number, fps = 30): number {
+  return Math.round(Math.round(us * fps / 1_000_000) * 1_000_000 / fps)
+}
+
 export function readProject(path: string): Project {
   if (!existsSync(path)) throw new Error(`Project file not found: ${path}`)
   return JSON.parse(readFileSync(path, 'utf-8')) as Project

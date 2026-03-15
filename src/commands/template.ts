@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { getTemplatesDir, getActiveAccountId, getClipLibraryDir, getProjectsDir } from '../config.js'
-import { uid, saveProject } from '../project.js'
+import { uid, saveProject, snapToFrame } from '../project.js'
 
 export function cmdTemplateList(): void {
   const dir = getTemplatesDir()
@@ -76,8 +76,8 @@ export function cmdTemplateUse(args: string[]): void {
 
   for (const slot of template.slots) {
     const override = slotOverrides.find(o => o.slot_id === slot.slot_id)
-    const startUs = Math.round(slot.start_sec * 1e6)
-    const durationUs = Math.round(slot.duration_sec * 1e6)
+    const startUs = snapToFrame(Math.round(slot.start_sec * 1e6))
+    const durationUs = snapToFrame(Math.round(slot.duration_sec * 1e6))
 
     let clip = override?.clip_id ? null : pickClip(slot.clip_category)
     if (override?.clip_id) {
