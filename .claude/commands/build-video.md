@@ -224,10 +224,10 @@ Common patches:
 {"startUs": 0, "durationUs": 4200000}
 ```
 
-Add a zoom animation:
+Add a zoom animation (default to 1.25x end scale — 1.15x is too subtle):
 ```
 statonic segment add-zoom <project-path> <segment-id> \
-  --keyframes '[{"time_sec":0,"scale":1},{"time_sec":2,"scale":1.15}]'
+  --keyframes '[{"time_sec":0,"scale":1},{"time_sec":2,"scale":1.25}]'
 ```
 
 Add a new text overlay:
@@ -376,11 +376,30 @@ statonic project export <path> --telegram
 - The student in the hook looks stressed/tired — relatable emotional hook
 - No talking, no voiceover — text-only
 
+**Hook ↔ technique causal link (critical):**
+The showcase/technique text must directly answer the hook's implicit question. Weak causal links kill retention — the viewer asked a question in the hook and didn't get a satisfying answer.
+
+| Hook | Matching technique | Weak technique (avoid) |
+|------|--------------------|------------------------|
+| "how to memorize 200 pages in 3 HOURS" | ACTIVE RECALL 🤫 | POMODORO METHOD ⏱️ |
+| "how to END your phone addiction and study" | GAMIFICATION 🎮 | SPACED REPETITION 📅 |
+| "websites that SAVED me in chemistry" | Gizmo AI 🤫 | note-taking tips |
+| "how to study LESS but learn MORE" | SPACED REPETITION 📅 | writing notes by hand |
+| "study after school when you're tired" | ACTIVE RECALL 🤫 (quick, low effort) | long essay techniques |
+
+Rules:
+- If the hook mentions **speed/efficiency** → technique must promise fast results (active recall, AI)
+- If the hook mentions **phone/distraction** → technique must address focus or gamify studying
+- If the hook mentions a **subject** (chemistry, biology) → technique or tool must be subject-specific
+- If the hook mentions **tiredness/burnout** → technique must be low-effort or short sessions
+- **Never pick a generic technique** that could apply to any hook — it must feel like the direct solution
+
 **What underperforms:**
 - Multiple quick cuts in the hook (feels chaotic)
 - Brag hooks ("I got 100%...") — audience doesn't connect
 - Problem-statement without solution reveal in the video
 - Videos over 10s
+- Mismatched hook and technique (hook promises one thing, body delivers another)
 
 ---
 
