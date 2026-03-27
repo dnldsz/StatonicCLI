@@ -315,6 +315,26 @@ export function cmdVideoBuild(args: string[]): void {
     }
   }
 
+  // Merge text segments with identical content+style into a single spanning segment
+  // (persistent text that repeats across slots becomes one continuous overlay)
+  const mergedTextSegs: any[] = []
+  for (const seg of textTrack.segments) {
+    const styleKey = `${seg.text}|${seg.x}|${seg.y}|${seg.fontSize}|${seg.color}|${seg.bold}|${seg.italic}|${seg.strokeEnabled}|${seg.strokeColor}|${seg.textAlign}`
+    const existing = mergedTextSegs.find(s =>
+      `${s.text}|${s.x}|${s.y}|${s.fontSize}|${s.color}|${s.bold}|${s.italic}|${s.strokeEnabled}|${s.strokeColor}|${s.textAlign}` === styleKey
+    )
+    if (existing) {
+      // Extend the existing segment to cover this one too
+      const end = Math.max(existing.startUs + existing.durationUs, seg.startUs + seg.durationUs)
+      existing.startUs = Math.min(existing.startUs, seg.startUs)
+      existing.durationUs = end - existing.startUs
+      console.log(`  [merge] persistent text spans to ${(existing.durationUs / 1e6).toFixed(2)}s: "${seg.text.replace(/\n/g, ' / ')}"`)
+    } else {
+      mergedTextSegs.push({ ...seg })
+    }
+  }
+  textTrack.segments = mergedTextSegs
+
   const finalName = projectName || `${template.name} - ${new Date().toLocaleDateString()}`
   const totalDurationSec = template.total_duration_sec
   const hookDurationSec: number = template.slots?.[0]?.duration_sec ?? 4.2
