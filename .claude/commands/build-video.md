@@ -342,6 +342,20 @@ statonic project export <path> --telegram
 
 ## 10. What makes a good video — editorial guidance
 
+**Instagram Reels safe area (1080×1920):**
+- Bottom ~380px is covered by the interaction bar (like, comment, share) — text placed there will be hidden
+- Safe y range: **-0.6 to 0.85** (y=0 is center, y=1 is top, y=-1 is bottom)
+- Default text position: y=0.28 (upper-center) — safest for hook text
+- NEVER place text below y=-0.6 unless it's intentionally off-screen
+- `segment add-text` default font-size is 85px — this is too large for 3+ line text; use 72px for 2 lines, 60px for 3-4 lines
+
+**Font size guidance:**
+- 1-line short hook: 85-95px
+- 2-line hook: 72px
+- 3-line hook: 60-65px
+- 4-line hook: 55-60px
+- Technique labels (body clips): 72-80px
+
 **Hook text rules (from top performers):**
 - Keep it to 2-3 short lines, never more
 - Use line breaks (`\n`) to control pacing — each line reads separately

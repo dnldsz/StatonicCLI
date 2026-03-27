@@ -306,7 +306,7 @@ export function cmdVideoBuild(args: string[]): void {
         id: uid(), type: 'text', text,
         startUs, durationUs,
         x: 0, y: slot.text?.y ?? 0.28,
-        fontSize: slot.text?.fontSize ?? 85,
+        fontSize: slot.text?.fontSize ?? 72,
         color: '#ffffff', bold: false, italic: false,
         strokeEnabled: true, strokeColor: '#000000', strokeWidth: 4,
         textAlign: 'center', textScale: 1,
