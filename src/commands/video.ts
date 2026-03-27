@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 import { writeFileSync } from 'fs'
 import {
   getTemplatesDir, getActiveAccountId, getClipLibraryDir,
-  getProjectsDir, loadConfig,
+  getProjectsDir, getAudioLibraryDir, loadConfig,
 } from '../config.js'
 import { uid, saveProject, readProject, snapToFrame } from '../project.js'
 import { renderPreview } from '../ffmpeg.js'
@@ -160,6 +160,63 @@ export function previewAndTelegram(projectPath: string, doTelegram: boolean): vo
   console.log(`\n  Project: ${projectPath}`)
 }
 
+// ─── Audio picker ─────────────────────────────────────────────────────────
+
+function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): any | null {
+  const audioDir = getAudioLibraryDir()
+  if (!existsSync(audioDir)) return null
+
+  const candidates: any[] = []
+  for (const audioId of readdirSync(audioDir)) {
+    const metaPath = join(audioDir, audioId, 'metadata.json')
+    if (!existsSync(metaPath)) continue
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'))
+      if (meta.dropTimeMs == null) continue
+      const dropSec = meta.dropTimeMs / 1000
+      if (dropSec < hookDurationSec - 0.1) continue
+      if (meta.duration < totalDurationSec) continue
+      candidates.push(meta)
+    } catch { /* skip */ }
+  }
+
+  if (candidates.length === 0) return null
+
+  // Pick the one whose drop time is closest to the hook cut
+  candidates.sort((a, b) =>
+    Math.abs(a.dropTimeMs / 1000 - hookDurationSec) - Math.abs(b.dropTimeMs / 1000 - hookDurationSec)
+  )
+  const selected = candidates[0]
+  const dropSec = selected.dropTimeMs / 1000
+
+  // Align beat drop to hook cut: shift audio start so drop lands at hookDurationSec
+  const audioStartSec = hookDurationSec - dropSec
+  const startUs = Math.round(audioStartSec * 1e6)
+  const sourceStartUs = startUs < 0 ? Math.round(Math.abs(startUs)) : 0
+
+  const seg = {
+    id: uid(),
+    type: 'audio',
+    src: selected.path,
+    name: selected.name,
+    startUs: Math.max(0, startUs),
+    durationUs: Math.round(totalDurationSec * 1e6),
+    sourceStartUs,
+    sourceDurationUs: Math.round(totalDurationSec * 1e6),
+    fileDurationUs: Math.round(selected.duration * 1e6),
+    volume: 1.0,
+    dropTimeUs: selected.dropTimeMs * 1000,
+  }
+
+  return {
+    id: uid(),
+    type: 'audio',
+    label: 'MUSIC',
+    segments: [seg],
+    _audioName: selected.name, // stripped before saving
+  }
+}
+
 // ─── video build ──────────────────────────────────────────────────────────
 
 export function cmdVideoBuild(args: string[]): void {
@@ -209,7 +266,7 @@ export function cmdVideoBuild(args: string[]): void {
   if (hookClipId)  slotOverrides.push({ slot_id: 'hook', clip_id: hookClipId })
   if (gizmoClipId) slotOverrides.push({ slot_id: 'gizmo', clip_id: gizmoClipId })
 
-  const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[] }
+  const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[], muted: true }
   const textTrack  = { id: uid(), type: 'text'  as const, label: 'TEXT',  segments: [] as any[] }
 
   console.log(`Building "${template.name}" (${template.slots.length} slots)...`)
@@ -259,11 +316,24 @@ export function cmdVideoBuild(args: string[]): void {
   }
 
   const finalName = projectName || `${template.name} - ${new Date().toLocaleDateString()}`
+  const totalDurationSec = template.total_duration_sec
+  const hookDurationSec: number = template.slots?.[0]?.duration_sec ?? 4.2
+
+  // ─── Auto-pick music from audio library ───────────────────────────────────
+  const tracks: any[] = [videoTrack, textTrack]
+  if (!noTelegram) { /* music always on unless --no-music passed */ }
+  const audioTrack = pickAudioTrack(hookDurationSec, totalDurationSec)
+  if (audioTrack) {
+    tracks.push(audioTrack)
+    console.log(`\n  [music] ${audioTrack._audioName} (drop @ ${(audioTrack.segments[0].dropTimeUs / 1e6).toFixed(2)}s aligned to hook cut)`)
+    delete audioTrack._audioName
+  }
+
   const project = {
     name: finalName,
     accountId,
     canvas: { width: 1080, height: 1920 },
-    tracks: [videoTrack, textTrack],
+    tracks,
   }
 
   const projectsDir = getProjectsDir(accountId)

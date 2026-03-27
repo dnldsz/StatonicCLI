@@ -41,12 +41,96 @@ Videos follow a strict structure: **hook clip → product/technique reveal**. Th
 - Hooks shorter than 2.5s correlate with low views
 - The Gizmo reveal **always comes last** — it's the payoff
 
-### Proven hook text patterns:
-- Comparison: `"95% Student (A+)\n7:00pm"` / `"60% Student (C-)\n7:00pm"` as persistent labels
-- Bold claim: `"when people ask how you memorized 200 pages in 3 HOURS 🤫"`
-- Relatable: `"me studying at 2 am because i chose to be happy all afternoon"`
-- Listicle: `"websites that\nSAVED me\nin chemistry"`
-- Statement: `"how to study after school when you're tired"`
+### Real hook examples (from top performers — adapt the subject, keep the structure)
+
+**#1 — 9.3M views — comparison hook** (3-way split screen, persistent labels across all scenes)
+```
+Hook text (slot "hook", 3 labels displayed simultaneously):
+  "95% Student (A+)\n7:00pm"
+  "80% Student (B+)\n7:00pm"
+  "60% Student (C-)\n7:00pm"
+Structure: hook shows all 3 students starting at 7pm →
+           scene 2 shows divergence (60% still up at 2am) →
+           scene 3 reveals Gizmo on the A+ student's MacBook
+Persistent text carries through: "95% Student (A+)", "80% Student (B+)", "60% Student (C-)"
+```
+
+**#2 — 6.5M views — bold_claim hook** (close-up of annotated exam notes, no face)
+```
+Hook text: '"when people ask how you memorized 200 pages in 3 HOURS 🤫"'
+Structure: hook 3.3s → "take a picture of your notes" → "click on memorise" → "and do this 1 hour/day"
+Note: quote marks are part of the text — creates intrigue, implies a secret
+```
+
+**#3 — 5.3M views — statement hook** (aesthetic minimal desk, no creator face in hook)
+```
+Hook text: "how to study after school when you're tired"
+Structure: hook 2.3s → "save for later..." → "read caption 🔽🤫" → Gizmo on MacBook
+Note: lowercase, conversational. "save for later" is a soft CTA that works well
+```
+
+**#4 — 3.1M views — relatable hook** (single text overlay persists across ALL scenes)
+```
+Hook text: "me studying at 2 am because i chose to be happy all afternoon"
+Structure: hook 3.7s (2 cuts) → writing in notebook → Gizmo MacBook reveal
+Note: same text on EVERY scene — the whole video is one running joke/confession
+```
+
+**#5 — 2.8M views — listicle hook** (creator stressed at desk)
+```
+Hook text: "websites that\nSAVED me\nin chemistry"
+Structure: hook 4.4s → Gizmo AI (1s) → Organic Chemistry Tutor (1s)
+Note: 3-line layout, capitalised middle line for emphasis
+```
+
+**#6 — 2.1M views — problem_solution hook** (phone addiction format)
+```
+Hook text line 1: "how to END your\nphone addiction\nand study"
+Hook text line 2: "from a straight A student 🤫"
+Structure: 3 cuts in hook showing phone addiction → Gizmo tutorial body
+Note: two separate text segments on the same hook clip for layered messaging
+```
+
+**#7 — 1.7M views — bold_claim hook** (efficiency promise)
+```
+Hook text: "how to\nstudy LESS\nbut\nlearn MORE"
+Structure: same Gizmo tutorial body as #2 — same body, different hook
+Note: "LESS" and "MORE" in caps for contrast. 4-line layout, punchy
+```
+
+**#8 — 1.1M views — curiosity_gap hook** (exam stress)
+```
+Hook text: "when you have too much to cover for your exam so you pull this move:"
+Structure: 5.1s hook → Gizmo tutorial body
+Note: ends with a colon — explicitly promises a reveal. Single long line, no breaks
+```
+
+**#9 — 759K views — problem_agitation hook** (cascading pain points, 5 text segments)
+```
+Text 1: "students studying\nTOO MANY subjects\nat once"
+Text 2: "*feeling burnout"
+Text 3: "*too tired to study"
+Text 4: "*falling behind"
+Text 5: "*failing exams"
+Structure: each pain point appears as its own timed text segment (rapid stacking)
+Persistent: "students who follow\nme and use:" (reveals on body clips)
+```
+
+**#10 — 1M views — problem_solution hybrid** (phone addiction + technique showcase)
+```
+Hook text: "how to END your phone addiction and START studying ✅"
+Persistent: "students who follow\nme and use:"
+Structure: 2-cut phone addiction hook → 4 technique clips with technique names
+Note: single-line hook (no breaks), ✅ at end. Persistent text sets up the body
+```
+
+**Pattern rules extracted from the data:**
+- Comparison format: always use `\n` between label and timestamp (`"A+ Student\n7:00pm"`)
+- Problem hooks: break at 3 lines max, caps on the key verb (`END`, `LESS`, `MORE`, `SAVED`)
+- Relatable/statement: all lowercase, conversational tone, no caps
+- Bold claim: use quote marks around the text to imply "this is what people say about me"
+- Persistent text: set same text on multiple segments to carry a message across scenes
+- `🤫` emoji appears in 4 of the top 10 — it signals a secret/hack which fits the content
 
 ---
 
@@ -200,7 +284,36 @@ statonic variation create <project-path> \
 
 ---
 
-## 9. Typical workflow
+## 9. Music
+
+Music is extracted from downloaded reference reels and stored in the audio library. The beat drop is aligned to the hook→gizmo cut point automatically.
+
+### Extract audio from a reel:
+```
+statonic audio extract-reel <reel-id>
+```
+Auto-detects the drop time from the reel's `scenes.json` (uses `hook_duration`, which is the first visual cut — same as where the beat drops). Override with `--drop-time <sec>` if needed.
+
+```
+statonic audio list        # see what's in the library
+```
+
+### Music in video build:
+`video build` automatically picks music from the audio library if any track has:
+- `dropTimeMs >= hookDuration * 1000`
+- `duration >= totalDuration`
+
+It picks the track whose drop time is closest to the hook cut and aligns the beat drop to the transition. No flags needed — it just works if music is in the library.
+
+### Export with Telegram:
+```
+statonic project export <project-path> --telegram
+```
+Sends the exported MP4 as a video (not document) to Telegram after export completes.
+
+---
+
+## 10. Typical workflow
 
 ```
 # 1. See what's available
@@ -221,8 +334,8 @@ statonic segment update <path> <seg-id> '{"text":"how to study\nbiology\nin 1 ho
 # 5. Preview and send
 statonic video preview <path> --telegram
 
-# 6. Export when ready
-statonic project export <path> --output ~/Desktop/final.mp4
+# 6. Export and send to Telegram
+statonic project export <path> --telegram
 ```
 
 ---

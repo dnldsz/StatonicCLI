@@ -81,7 +81,7 @@ export function cmdTemplateUse(args: string[]): void {
     return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null
   }
 
-  const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[] }
+  const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[], muted: true }
   const textTrack = { id: uid(), type: 'text' as const, label: 'TEXT', segments: [] as any[] }
 
   for (const slot of template.slots) {

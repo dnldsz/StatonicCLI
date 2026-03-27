@@ -25,12 +25,34 @@ function splitRuns(line: string): Run[] {
 }
 
 let fontRegistered = false
+let emojiFontFamily = ''
+
+// macOS and common Linux paths for colour emoji fonts
+const EMOJI_FONT_CANDIDATES = [
+  '/System/Library/Fonts/Apple Color Emoji.ttc',          // macOS
+  '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf',    // Ubuntu/Debian
+  '/usr/share/fonts/noto-emoji/NotoColorEmoji.ttf',       // Fedora
+]
 
 function ensureFont(): string {
   const config = loadConfig()
   const fontPath = config.fontPath
-  if (!fontRegistered && fontPath && existsSync(fontPath)) {
-    GlobalFonts.registerFromPath(fontPath, 'StatonicFont')
+  if (!fontRegistered) {
+    if (fontPath && existsSync(fontPath)) {
+      GlobalFonts.registerFromPath(fontPath, 'StatonicFont')
+    }
+    // Register a colour emoji font so @napi-rs/canvas (Skia) can render emoji —
+    // system fonts are NOT automatically available; they must be registered explicitly.
+    for (const candidate of EMOJI_FONT_CANDIDATES) {
+      if (existsSync(candidate)) {
+        const family = candidate.includes('Apple') ? 'AppleColorEmoji' : 'NotoColorEmoji'
+        try {
+          GlobalFonts.registerFromPath(candidate, family)
+          emojiFontFamily = family
+        } catch { /* ignore — font may already be registered */ }
+        break
+      }
+    }
     fontRegistered = true
   }
   return fontPath && existsSync(fontPath) ? 'StatonicFont' : 'Arial'
@@ -57,7 +79,8 @@ export function renderTextToPng(
   const effectiveSize = seg.fontSize * (seg.textScale ?? 1)
   const weight = seg.bold ? 'bold' : 'normal'
   const style = seg.italic ? 'italic' : 'normal'
-  ctx.font = `${style} ${weight} ${effectiveSize}px ${fontFamily}, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif`
+  const emojiFallback = emojiFontFamily ? `, ${emojiFontFamily}` : ', Apple Color Emoji, Noto Color Emoji'
+  ctx.font = `${style} ${weight} ${effectiveSize}px ${fontFamily}${emojiFallback}, sans-serif`
   ctx.textBaseline = 'middle'
   ctx.textAlign = seg.textAlign || 'center'
 

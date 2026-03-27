@@ -1,5 +1,8 @@
-import { existsSync, readdirSync, mkdirSync, statSync } from 'fs'
+import { existsSync, readdirSync, mkdirSync, statSync, readFileSync, writeFileSync } from 'fs'
 import { join, basename, dirname } from 'path'
+import { randomBytes } from 'crypto'
+import { tmpdir } from 'os'
+import { spawnSync } from 'child_process'
 import { readProject, saveProject, summariseProject } from '../project.js'
 import { getProjectsDir, getActiveAccountId, loadConfig } from '../config.js'
 import { exportVideo } from '../ffmpeg.js'
@@ -88,11 +91,13 @@ export function cmdProjectWrite(args: string[]): void {
 
 export async function cmdProjectExport(args: string[]): Promise<void> {
   const projectPath = args[0]
-  if (!projectPath) { console.error('Usage: statonic project export <path> [--output <path>]'); process.exit(1) }
+  if (!projectPath) { console.error('Usage: statonic project export <path> [--output <path>] [--telegram]'); process.exit(1) }
 
   let outputPath = ''
+  let sendTelegram = false
   const outIdx = args.indexOf('--output')
   if (outIdx >= 0 && args[outIdx + 1]) outputPath = args[outIdx + 1]
+  if (args.includes('--telegram')) sendTelegram = true
 
   const project = readProject(projectPath)
   if (!outputPath) {
@@ -101,7 +106,6 @@ export async function cmdProjectExport(args: string[]): Promise<void> {
 
   console.log(`Exporting to: ${outputPath}`)
   const result = await exportVideo(project, outputPath, (line) => {
-    // Print progress lines that contain frame info
     if (line.includes('frame=') || line.includes('time=')) {
       process.stderr.write(line)
     }
@@ -109,8 +113,55 @@ export async function cmdProjectExport(args: string[]): Promise<void> {
 
   if (result.ok) {
     console.log(`Export complete: ${result.filePath}`)
+    if (sendTelegram) {
+      console.log('Sending to Telegram...')
+      telegramSendVideo(result.filePath!, project.name ?? basename(outputPath))
+    }
   } else {
     console.error(`Export failed: ${result.error}`)
     process.exit(1)
+  }
+}
+
+function telegramSendVideo(filePath: string, caption: string): void {
+  const config = loadConfig()
+  const token = process.env.TELEGRAM_BOT_TOKEN || config.telegramBotToken
+  const chatId = process.env.TELEGRAM_CHAT_ID || config.telegramChatId
+  if (!token || !chatId) { console.warn('  [telegram] No credentials — skipping.'); return }
+
+  const fileData = readFileSync(filePath)
+  const fileName = basename(filePath)
+  const boundary = `----FormBoundary${randomBytes(8).toString('hex')}`
+  const CRLF = '\r\n'
+  const parts: Buffer[] = []
+
+  const addField = (name: string, value: string) =>
+    parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`))
+
+  addField('chat_id', chatId)
+  addField('caption', caption)
+  addField('supports_streaming', 'true')
+  parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="video"; filename="${fileName}"${CRLF}Content-Type: video/mp4${CRLF}${CRLF}`))
+  parts.push(fileData)
+  parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`))
+
+  const body = Buffer.concat(parts)
+  const tmpBody = join(tmpdir(), `tg_${randomBytes(4).toString('hex')}.bin`)
+  writeFileSync(tmpBody, body)
+
+  const r = spawnSync('curl', [
+    '-s', '-X', 'POST',
+    `https://api.telegram.org/bot${token}/sendVideo`,
+    '-H', `Content-Type: multipart/form-data; boundary=${boundary}`,
+    '--data-binary', `@${tmpBody}`,
+  ], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
+  spawnSync('rm', ['-f', tmpBody])
+
+  try {
+    const resp = JSON.parse(r.stdout)
+    if (resp.ok) console.log('  Sent to Telegram.')
+    else console.warn(`  [telegram] Error: ${resp.description}`)
+  } catch {
+    console.warn(`  [telegram] Bad response: ${r.stdout?.slice(0, 100)}`)
   }
 }

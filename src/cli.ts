@@ -7,7 +7,7 @@ import { cmdPreview, cmdFrames, cmdVideoInfo } from './commands/preview.js'
 import { cmdClipAnalyze, cmdClipIndex, cmdClipSearch, cmdClipList } from './commands/clip.js'
 import { cmdTemplateList, cmdTemplateUse } from './commands/template.js'
 import { cmdAccountList, cmdAccountSet, cmdAccountCreate } from './commands/account.js'
-import { cmdAudioFind } from './commands/audio.js'
+import { cmdAudioFind, cmdAudioExtractReel, cmdAudioList } from './commands/audio.js'
 import { cmdHookGenerate, cmdHookLearn } from './commands/hook.js'
 import { cmdVariationCreate } from './commands/variation.js'
 import { cmdMigrate } from './commands/migrate.js'
@@ -25,7 +25,7 @@ PROJECT:
   project read <path>                    Read and summarize a project
   project list [--account <id>]          List all projects
   project write <json> <filename>        Write a project JSON file
-  project export <path> [--output <p>]   Export to MP4
+  project export <path> [--output <p>] [--telegram]  Export to MP4
 
 SEGMENT:
   segment update <project> <id> <json>   Update segment properties
@@ -56,6 +56,8 @@ VARIATIONS:
   variation create <project> --variations <json> [--output-dir <path>]
 
 AUDIO:
+  audio extract-reel <reel-id> [--drop-time <sec>] [--name "..."]
+  audio list
   audio find --hook-duration <s> --total-duration <s> [--prefer-closest]
 
 ACCOUNTS:
@@ -154,6 +156,8 @@ async function main(): Promise<void> {
 
     case 'audio':
       switch (sub) {
+        case 'extract-reel': return cmdAudioExtractReel(rest)
+        case 'list': return cmdAudioList(rest)
         case 'find': return cmdAudioFind(rest)
         default: console.error(`Unknown audio subcommand: ${sub}`); process.exit(1)
       }
