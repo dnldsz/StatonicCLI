@@ -418,19 +418,22 @@ export function exportVideo(
       const xExpr = `(W-w)/2+${userOffsetX}`
       const yExpr = `(H-h)/2+${userOffsetY}`
       filterParts.push(
-        `[${i + 1}:v]${cropFilter}${result.filter},${ptsShift}[sv${i}prep]`,
-        `color=c=black:s=${hc.w}x${hc.h}:r=${FPS}:d=${totalDuration}[hibg${i}]`,
-        `[hibg${i}][sv${i}prep]overlay=x='${xExpr}':y='${yExpr}':eval=frame:eof_action=pass,scale=${canvas.width}:${canvas.height}:flags=lanczos[sv${i}]`
+        `[${i + 1}:v]${cropFilter}${result.filter},format=yuv420p,${ptsShift}[sv${i}prep]`,
+        `color=c=black:s=${hc.w}x${hc.h}:r=${FPS}:d=${totalDuration},format=yuv420p[hibg${i}]`,
+        `[hibg${i}][sv${i}prep]overlay=x='${xExpr}':y='${yExpr}':eval=frame:eof_action=pass,scale=${canvas.width}:${canvas.height}:flags=lanczos,format=yuv420p[sv${i}]`
       )
     } else {
       filterParts.push(
-        `[${i + 1}:v]${cropFilter}${result.filter},fps=${FPS},${ptsShift}[sv${i}]`
+        `[${i + 1}:v]${cropFilter}${result.filter},format=yuv420p,fps=${FPS},${ptsShift}[sv${i}]`
       )
     }
   }
 
+  // Normalize base canvas to yuv420p so overlay doesn't do implicit colorspace conversion
+  filterParts.push(`[0:v]format=yuv420p[base]`)
+
   // Step 2: overlay chain
-  let currentIn = '[0:v]'
+  let currentIn = '[base]'
   for (let i = 0; i < allVideoSegs.length; i++) {
     const { seg } = allVideoSegs[i]
     const outLabel = i === allVideoSegs.length - 1 && allTextSegs.length === 0 ? '[vout]' : `[ov${i}]`
@@ -560,6 +563,9 @@ export function exportVideo(
     '-preset', 'fast',
     '-crf', '23',
     '-pix_fmt', 'yuv420p',
+    '-colorspace', 'bt709',
+    '-color_primaries', 'bt709',
+    '-color_trc', 'bt709',
     '-frames:v', String(totalFrames),
     ...(audioSegs.length > 0 ? ['-c:a', 'aac', '-b:a', '192k'] : []),
     outputPath
