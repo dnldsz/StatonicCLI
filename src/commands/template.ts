@@ -3,12 +3,22 @@ import { join } from 'path'
 import { getTemplatesDir, getActiveAccountId, getClipLibraryDir, getProjectsDir } from '../config.js'
 import { uid, saveProject, snapToFrame } from '../project.js'
 
-export function cmdTemplateList(): void {
+export function cmdTemplateList(args: string[] = []): void {
+  const jsonMode = args.includes('--json')
   const dir = getTemplatesDir()
-  if (!existsSync(dir)) { console.log('No templates directory found.'); return }
+  if (!existsSync(dir)) { console.log(jsonMode ? '[]' : 'No templates directory found.'); return }
 
   const files = readdirSync(dir).filter(f => f.endsWith('.json'))
-  if (files.length === 0) { console.log('No templates found.'); return }
+  if (files.length === 0) { console.log(jsonMode ? '[]' : 'No templates found.'); return }
+
+  if (jsonMode) {
+    const templates: any[] = []
+    for (const f of files) {
+      try { templates.push(JSON.parse(readFileSync(join(dir, f), 'utf-8'))) } catch { /* skip */ }
+    }
+    console.log(JSON.stringify(templates, null, 2))
+    return
+  }
 
   for (const f of files) {
     try {

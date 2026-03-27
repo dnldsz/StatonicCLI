@@ -14,6 +14,7 @@ import { cmdMigrate } from './commands/migrate.js'
 import { cmdTelegram } from './commands/telegram.js'
 import { cmdReelDownload, cmdReelDetect, cmdReelAnalyze, cmdReelBatch, cmdReelInspect, cmdReelInsights, cmdReelTop } from './commands/reel.js'
 import { cmdVideoBuild, cmdVideoPreview } from './commands/video.js'
+import { cmdStatus } from './commands/status.js'
 
 const HELP = `statonic — headless video editor CLI
 
@@ -76,6 +77,7 @@ REEL ANALYSIS:
   reel top [--min-views <n>] [--limit <n>]
 
 UTILITY:
+  status [--json]                        Show complete workspace state
   telegram <file-path> [--caption "..."]
   migrate                                Migrate data from Electron app
   config                                 Show current config
@@ -129,7 +131,7 @@ async function main(): Promise<void> {
 
     case 'template':
       switch (sub) {
-        case 'list': return cmdTemplateList()
+        case 'list': return cmdTemplateList(rest)
         case 'use': return cmdTemplateUse(rest)
         default: console.error(`Unknown template subcommand: ${sub}`); process.exit(1)
       }
@@ -187,6 +189,7 @@ async function main(): Promise<void> {
       }
       break
 
+    case 'status': return cmdStatus(args.slice(1))
     case 'telegram': return cmdTelegram(args.slice(1))
     case 'migrate': return cmdMigrate()
     case 'config': {

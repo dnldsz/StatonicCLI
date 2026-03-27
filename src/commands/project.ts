@@ -6,9 +6,13 @@ import { exportVideo } from '../ffmpeg.js'
 
 export function cmdProjectRead(args: string[]): void {
   const path = args[0]
-  if (!path) { console.error('Usage: statonic project read <path>'); process.exit(1) }
+  if (!path) { console.error('Usage: statonic project read <path> [--json]'); process.exit(1) }
   const project = readProject(path)
-  console.log(summariseProject(project))
+  if (args.includes('--json')) {
+    console.log(JSON.stringify(project, null, 2))
+  } else {
+    console.log(summariseProject(project))
+  }
 }
 
 export function cmdProjectList(args: string[]): void {

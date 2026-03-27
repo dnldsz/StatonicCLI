@@ -214,18 +214,21 @@ export function cmdClipSearch(args: string[]): void {
 export function cmdClipList(args: string[]): void {
   let category = ''
   let accountId = ''
+  let jsonMode = false
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--category' && args[i + 1]) category = args[++i]
     if (args[i] === '--account' && args[i + 1]) accountId = args[++i]
+    if (args[i] === '--json') jsonMode = true
   }
 
   if (!accountId) accountId = getActiveAccountId()
 
   const clipsPath = getClipLibraryDir(accountId)
-  if (!existsSync(clipsPath)) { console.log('No clips found.'); return }
+  if (!existsSync(clipsPath)) { console.log(jsonMode ? '[]' : 'No clips found.'); return }
 
   const clipDirs = readdirSync(clipsPath)
-  let count = 0
+  const results: any[] = []
+
   for (const clipId of clipDirs) {
     const clipDir = join(clipsPath, clipId)
     try {
@@ -234,17 +237,24 @@ export function cmdClipList(args: string[]): void {
       if (!existsSync(metaPath)) continue
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'))
       if (category && meta.category !== category) continue
-
-      count++
-      console.log(`${meta.name} [${meta.category}] ${meta.analyzed ? '✓' : '○'}`)
-      console.log(`  ID: ${meta.id ?? clipId}`)
-      console.log(`  Duration: ${meta.duration?.toFixed(1)}s | ${meta.width}×${meta.height}`)
-      console.log(`  Path: ${meta.path}`)
-      if (meta.description && meta.description !== '(pending analysis)') {
-        console.log(`  Description: ${meta.description}`)
-      }
-      console.log()
+      results.push(meta)
     } catch { /* skip */ }
   }
-  console.log(`Total: ${count} clip(s)`)
+
+  if (jsonMode) {
+    console.log(JSON.stringify(results, null, 2))
+    return
+  }
+
+  for (const meta of results) {
+    console.log(`${meta.name} [${meta.category}] ${meta.analyzed ? '✓' : '○'}`)
+    console.log(`  ID: ${meta.id}`)
+    console.log(`  Duration: ${meta.duration?.toFixed(1)}s | ${meta.width}×${meta.height}`)
+    console.log(`  Path: ${meta.path}`)
+    if (meta.description && meta.description !== '(pending analysis)') {
+      console.log(`  Description: ${meta.description}`)
+    }
+    console.log()
+  }
+  console.log(`Total: ${results.length} clip(s)`)
 }

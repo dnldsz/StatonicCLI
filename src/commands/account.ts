@@ -1,24 +1,7 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
-import { getDataDir, loadConfig, saveConfig } from '../config.js'
+import { loadConfig, saveConfig } from '../config.js'
 import { uid } from '../project.js'
+import { loadAccounts, saveAccounts } from '../accounts.js'
 import type { Account } from '../types.js'
-
-function getAccountsPath(): string {
-  return join(getDataDir(), 'accounts.json')
-}
-
-function loadAccounts(): Account[] {
-  const path = getAccountsPath()
-  if (!existsSync(path)) return []
-  try { return JSON.parse(readFileSync(path, 'utf-8')) } catch { return [] }
-}
-
-function saveAccounts(accounts: Account[]): void {
-  const dir = getDataDir()
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(getAccountsPath(), JSON.stringify(accounts, null, 2))
-}
 
 export function cmdAccountList(): void {
   const accounts = loadAccounts()
