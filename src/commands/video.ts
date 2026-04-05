@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, mkdirSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, homedir } from 'os'
 import {
   getTemplatesDir, getActiveAccountId, getClipLibraryDir,
   getProjectsDir, getAudioLibraryDir,
@@ -9,6 +9,29 @@ import { uid, saveProject, readProject, snapToFrame, findSegment } from '../proj
 import type { Project, TemplateMeta, Track, VideoSegment } from '../types.js'
 import { renderPreview } from '../ffmpeg.js'
 import { telegramSendDocument } from './telegram.js'
+
+// ─── Build status (signals to StatonicEditor) ────────────────────────────
+
+function getBuildStatusPath(): string {
+  return join(homedir(), 'Library', 'Application Support', 'Statonic', 'build-status.json')
+}
+
+function writeBuildStatus(status: {
+  status: 'building' | 'previewing' | 'done' | 'error'
+  templateId?: string
+  projectName?: string
+  projectPath?: string
+  startedAt?: string
+  progress?: number
+  currentStep?: string
+  error?: string
+}): void {
+  try {
+    const dir = join(homedir(), 'Library', 'Application Support', 'Statonic')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(getBuildStatusPath(), JSON.stringify(status, null, 2))
+  } catch { /* editor may not be running */ }
+}
 
 // ─── Clip library loader ───────────────────────────────────────────────────
 
@@ -241,7 +264,12 @@ export function cmdVideoBuild(args: string[]): void {
     console.error('Template missing templateMeta — legacy format no longer supported.')
     process.exit(1)
   }
-  buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram, clipOverrides })
+  try {
+    buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram, clipOverrides })
+  } catch (err: any) {
+    writeBuildStatus({ status: 'error', templateId, error: err?.message ?? String(err) })
+    throw err
+  }
 }
 
 function saveAndPreview(project: Project, accountId: string, noTelegram: boolean): void {
@@ -252,8 +280,18 @@ function saveAndPreview(project: Project, accountId: string, noTelegram: boolean
   saveProject(projectPath, project)
   console.log(`\nSaved: ${projectPath}`)
 
+  writeBuildStatus({ status: 'previewing', projectName: project.name, currentStep: 'Rendering previews...' })
   console.log('\nRendering preview frames...')
   previewAndTelegram(projectPath, !noTelegram)
+
+  writeBuildStatus({ status: 'done', projectName: project.name, projectPath })
+
+  // Also write load-project.json so editor auto-opens the result
+  try {
+    const stateDir = join(homedir(), 'Library', 'Application Support', 'Statonic')
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(join(stateDir, 'load-project.json'), JSON.stringify({ path: projectPath, project }))
+  } catch { /* editor may not be running */ }
 }
 
 function buildFromTemplateMeta(
@@ -284,10 +322,14 @@ function buildFromTemplateMeta(
   project.name = opts.projectName || `${template.name} - ${new Date().toLocaleDateString()}`
 
   console.log(`Building "${template.name}" (${meta.slots.length} slots)...`)
+  const buildStart = new Date().toISOString()
+  writeBuildStatus({ status: 'building', templateId: meta.id, projectName: project.name, startedAt: buildStart, progress: 0, currentStep: 'Assembling clips...' })
 
   const usedClipIds = new Set<string>()
 
-  for (const slot of meta.slots) {
+  for (let si = 0; si < meta.slots.length; si++) {
+    const slot = meta.slots[si]
+    writeBuildStatus({ status: 'building', templateId: meta.id, projectName: project.name, startedAt: buildStart, progress: si / meta.slots.length, currentStep: `Slot ${si + 1}/${meta.slots.length}` })
     const newSegId = idMap.get(slot.segmentId)
     if (!newSegId) { console.warn(`  [${slot.slotId}] segment not found`); continue }
 
