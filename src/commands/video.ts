@@ -159,13 +159,11 @@ function pickClip(
 
   if (!pool.length) return null
 
-  // If text provided, score all clips and pick best match globally
+  // If text provided, score clips within this category and pick best match
   if (opts?.text) {
-    const allClips = Object.values(byCategory).flat()
-      .filter(c => !opts.usedIds?.has(c.id))
-    const scored = allClips.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
+    const scored = pool.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
     scored.sort((a, b) => b.score - a.score)
-    if (scored.length && scored[0].score > 0) return scored[0].clip
+    if (scored[0].score > 0) return scored[0].clip
   }
 
   return pool[Math.floor(Math.random() * pool.length)]
