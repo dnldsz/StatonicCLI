@@ -1,103 +1,10 @@
-export interface ScaleKeyframe {
-  timeMs: number
-  scale: number
-}
+// Shared types from statonic-core
+export {
+  ScaleKeyframe, VideoSegment, TextSegment, AudioSegment, Segment,
+  Track, Project, TemplateSlot, TemplateMeta, Account,
+} from 'statonic-core'
 
-export interface VideoSegment {
-  id: string
-  type: 'video'
-  src: string
-  name: string
-  startUs: number
-  durationUs: number
-  sourceStartUs: number
-  sourceDurationUs: number
-  fileDurationUs: number
-  sourceWidth: number
-  sourceHeight: number
-  clipX: number
-  clipY: number
-  clipScale: number
-  scaleKeyframes?: ScaleKeyframe[]
-  cropLeft: number
-  cropRight: number
-  cropTop: number
-  cropBottom: number
-}
-
-export interface TextSegment {
-  id: string
-  type: 'text'
-  text: string
-  startUs: number
-  durationUs: number
-  x: number
-  y: number
-  fontSize: number
-  color: string
-  bold: boolean
-  italic: boolean
-  strokeEnabled: boolean
-  strokeColor: string
-  textAlign: 'left' | 'center' | 'right'
-  textScale: number
-}
-
-export interface AudioSegment {
-  id: string
-  type: 'audio'
-  src: string
-  name: string
-  startUs: number
-  durationUs: number
-  sourceStartUs: number
-  sourceDurationUs: number
-  fileDurationUs: number
-  volume: number
-  dropTimeUs?: number
-}
-
-export type Segment = VideoSegment | TextSegment | AudioSegment
-
-export interface Track {
-  id: string
-  type: 'video' | 'text' | 'audio'
-  label: string
-  segments: Segment[]
-  muted?: boolean
-}
-
-export interface Project {
-  name: string
-  accountId?: string
-  canvas: { width: number; height: number }
-  tracks: Track[]
-  templateMeta?: TemplateMeta
-}
-
-// ── Template types ──────────────────────────────────────────────────────────
-
-export interface TemplateSlot {
-  slotId: string
-  segmentId: string
-  clipCategory: string
-  textSegmentId?: string
-  textVariants?: string[]
-}
-
-export interface TemplateMeta {
-  id: string
-  description?: string
-  hookDurationSec?: number
-  slots: TemplateSlot[]
-  audioSwappable?: boolean
-}
-
-export interface Account {
-  id: string
-  name: string
-  created: string
-}
+// CLI-only types below
 
 export interface ClipMetadata {
   id: string
@@ -144,8 +51,8 @@ export interface SceneInfo {
 }
 
 export interface SceneData {
-  scenes: SceneInfo[]           // raw visual cuts from FFmpeg
-  raw_cuts: SceneInfo[]         // same as scenes (before analysis)
+  scenes: SceneInfo[]
+  raw_cuts: SceneInfo[]
   total_scenes: number
   total_cuts: number
   total_duration: number
@@ -155,25 +62,24 @@ export interface SceneData {
   cuts_per_second: number
 }
 
-/** Claude's analysis of a reel's structure — stored in analysis.json */
 export interface ReelAnalysis {
   logical_scenes: LogicalScene[]
-  hook_type: string             // e.g. "comparison", "listicle", "question", "statement"
+  hook_type: string
   hook_duration: number
-  persistent_text: string[]     // text that stays across multiple scenes
+  persistent_text: string[]
   total_logical_scenes: number
-  structure_summary: string     // e.g. "1 hook (3 cuts) + 4 showcase clips"
-  notes: string                 // any other observations
+  structure_summary: string
+  notes: string
 }
 
 export interface LogicalScene {
   start: number
   end: number
   duration: number
-  cuts: number                  // visual cuts within this logical scene
-  text_overlay: string[]        // text visible in this scene
-  persistent_text: boolean      // true if text carries over from previous scene
-  visual_description: string    // what's shown (e.g. "overhead desk shot, writing")
+  cuts: number
+  text_overlay: string[]
+  persistent_text: boolean
+  visual_description: string
 }
 
 export interface ReelIndexEntry {
