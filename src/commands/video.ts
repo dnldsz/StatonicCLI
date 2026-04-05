@@ -105,6 +105,17 @@ function loadClipsByCategory(accountId: string): Record<string, ClipEntry[]> {
   return byCategory
 }
 
+// Words in text that imply related clip concepts
+const SYNONYM_MAP: Record<string, string[]> = {
+  'technique': ['demonstrating', 'explaining', 'demo', 'method', 'showing'],
+  'method': ['demonstrating', 'explaining', 'demo', 'technique', 'showing'],
+  'feynman': ['explaining', 'demonstrating', 'teach', 'confident', 'direct camera'],
+  'scribble': ['drawing', 'scribbling', 'writing', 'notes', 'overhead'],
+  'gamification': ['gizmo', 'quiz', 'flashcards', 'gamified', 'active recall'],
+  'cheat': ['notes', 'revision', 'handwritten', 'study'],
+  'recall': ['active recall', 'flashcards', 'quiz', 'gizmo'],
+}
+
 /** Score how well a clip matches a text query. Higher = better match. */
 function scoreClipForText(clip: ClipEntry, text: string): number {
   if (!text) return 0
@@ -114,7 +125,14 @@ function scoreClipForText(clip: ClipEntry, text: string): number {
   const searchable = [clip.name, clip.description, ...clip.tags].join(' ').toLowerCase()
   let score = 0
   for (const word of words) {
-    if (searchable.includes(word)) score++
+    if (searchable.includes(word)) score += 2
+    // Check synonyms
+    const synonyms = SYNONYM_MAP[word]
+    if (synonyms) {
+      for (const syn of synonyms) {
+        if (searchable.includes(syn)) { score++; break }
+      }
+    }
   }
   return score
 }
@@ -141,11 +159,13 @@ function pickClip(
 
   if (!pool.length) return null
 
-  // If text provided, score and pick best match
+  // If text provided, score all clips and pick best match globally
   if (opts?.text) {
-    const scored = pool.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
+    const allClips = Object.values(byCategory).flat()
+      .filter(c => !opts.usedIds?.has(c.id))
+    const scored = allClips.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
     scored.sort((a, b) => b.score - a.score)
-    if (scored[0].score > 0) return scored[0].clip
+    if (scored.length && scored[0].score > 0) return scored[0].clip
   }
 
   return pool[Math.floor(Math.random() * pool.length)]
