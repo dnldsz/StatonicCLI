@@ -302,6 +302,7 @@ function buildFromTemplateMeta(
   const byCategory = loadClipsByCategory(accountId)
 
   const project: Project = structuredClone(template)
+  project.builtFromTemplate = meta.id
   delete project.templateMeta
 
   // Assign new IDs and snap all segment times to 30fps frame boundaries
