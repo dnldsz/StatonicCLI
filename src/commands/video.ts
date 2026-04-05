@@ -8,7 +8,8 @@ import {
   getTemplatesDir, getActiveAccountId, getClipLibraryDir,
   getProjectsDir, getAudioLibraryDir, loadConfig,
 } from '../config.js'
-import { uid, saveProject, readProject, snapToFrame } from '../project.js'
+import { uid, saveProject, readProject, snapToFrame, findSegment } from '../project.js'
+import type { Project, TemplateMeta, Track, VideoSegment, Segment } from '../types.js'
 import { renderPreview } from '../ffmpeg.js'
 
 // ─── Telegram helper (same logic as telegram.ts but callable internally) ───
@@ -162,7 +163,7 @@ export function previewAndTelegram(projectPath: string, doTelegram: boolean): vo
 
 // ─── Audio picker ─────────────────────────────────────────────────────────
 
-function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): any | null {
+function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): { track: Track; audioName: string } | null {
   const audioDir = getAudioLibraryDir()
   if (!existsSync(audioDir)) return null
 
@@ -182,39 +183,36 @@ function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): any 
 
   if (candidates.length === 0) return null
 
-  // Pick the one whose drop time is closest to the hook cut
   candidates.sort((a, b) =>
     Math.abs(a.dropTimeMs / 1000 - hookDurationSec) - Math.abs(b.dropTimeMs / 1000 - hookDurationSec)
   )
   const selected = candidates[0]
   const dropSec = selected.dropTimeMs / 1000
 
-  // Align beat drop to hook cut: shift audio start so drop lands at hookDurationSec
   const audioStartSec = hookDurationSec - dropSec
   const startUs = Math.round(audioStartSec * 1e6)
   const sourceStartUs = startUs < 0 ? Math.round(Math.abs(startUs)) : 0
 
-  const seg = {
-    id: uid(),
-    type: 'audio',
-    src: selected.path,
-    name: selected.name,
-    startUs: Math.max(0, startUs),
-    durationUs: Math.round(totalDurationSec * 1e6),
-    sourceStartUs,
-    sourceDurationUs: Math.round(totalDurationSec * 1e6),
-    fileDurationUs: Math.round(selected.duration * 1e6),
-    volume: 1.0,
-    dropTimeUs: selected.dropTimeMs * 1000,
-  }
-
-  return {
+  const track: Track = {
     id: uid(),
     type: 'audio',
     label: 'MUSIC',
-    segments: [seg],
-    _audioName: selected.name, // stripped before saving
+    segments: [{
+      id: uid(),
+      type: 'audio' as const,
+      src: selected.path,
+      name: selected.name,
+      startUs: Math.max(0, startUs),
+      durationUs: Math.round(totalDurationSec * 1e6),
+      sourceStartUs,
+      sourceDurationUs: Math.round(totalDurationSec * 1e6),
+      fileDurationUs: Math.round(selected.duration * 1e6),
+      volume: 1.0,
+      dropTimeUs: selected.dropTimeMs * 1000,
+    }],
   }
+
+  return { track, audioName: selected.name }
 }
 
 // ─── video build ──────────────────────────────────────────────────────────
@@ -222,20 +220,157 @@ function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): any 
 export function cmdVideoBuild(args: string[]): void {
   const templateId = args[0]
   if (!templateId) {
-    console.error('Usage: statonic video build <template-id> [--name "..."] [--hook <clip-id>] [--gizmo <clip-id>] [--topic "..."] [--no-telegram]')
+    console.error('Usage: statonic video build <template-id> [--name "..."] [--account <id>] [--no-telegram]')
     console.error('\nAvailable templates:')
     const dir = getTemplatesDir()
     if (existsSync(dir)) {
       for (const f of readdirSync(dir).filter((f: string) => f.endsWith('.json'))) {
         try {
           const t = JSON.parse(readFileSync(join(dir, f), 'utf-8'))
-          console.error(`  ${t.id} — ${t.name} (${t.slots?.length ?? 0} slots, ${t.total_duration_sec}s)`)
+          const meta = t.templateMeta
+          if (meta) {
+            console.error(`  ${meta.id} — ${t.name} (${meta.slots?.length ?? 0} slots)`)
+          } else {
+            console.error(`  ${t.id ?? f.replace('.json', '')} — ${t.name} (legacy format)`)
+          }
         } catch {}
       }
     }
     process.exit(1)
   }
 
+  let projectName = ''
+  let noTelegram = false
+  let accountOverride = ''
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--name' && args[i + 1]) projectName = args[++i]
+    if (args[i] === '--account' && args[i + 1]) accountOverride = args[++i]
+    if (args[i] === '--no-telegram') noTelegram = true
+  }
+
+  const templatePath = join(getTemplatesDir(), `${templateId}.json`)
+  if (!existsSync(templatePath)) { console.error(`Template "${templateId}" not found`); process.exit(1) }
+  const template = JSON.parse(readFileSync(templatePath, 'utf-8'))
+
+  // Route to new or legacy build
+  if (template.templateMeta) {
+    buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram })
+  } else {
+    buildFromLegacyTemplate(template, args)
+  }
+}
+
+function saveAndPreview(project: Project, accountId: string, noTelegram: boolean): void {
+  const projectsDir = getProjectsDir(accountId)
+  mkdirSync(projectsDir, { recursive: true })
+  const safeFilename = project.name.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').toLowerCase()
+  const projectPath = join(projectsDir, `${safeFilename}.json`)
+  saveProject(projectPath, project)
+  console.log(`\nSaved: ${projectPath}`)
+
+  console.log('\nRendering preview frames...')
+  previewAndTelegram(projectPath, !noTelegram)
+}
+
+function buildFromTemplateMeta(
+  template: Project & { templateMeta: TemplateMeta },
+  opts: { projectName: string; accountOverride: string; noTelegram: boolean }
+): void {
+  const meta = template.templateMeta
+  const accountId = opts.accountOverride || getActiveAccountId()
+  const byCategory = loadClipsByCategory(accountId)
+
+  const project: Project = structuredClone(template)
+  delete project.templateMeta
+
+  // Assign new IDs to all segments so each build is unique
+  const idMap = new Map<string, string>()
+  for (const track of project.tracks) {
+    track.id = uid()
+    for (const seg of track.segments) {
+      const oldId = seg.id
+      seg.id = uid()
+      idMap.set(oldId, seg.id)
+    }
+  }
+
+  project.accountId = accountId
+  project.name = opts.projectName || `${template.name} - ${new Date().toLocaleDateString()}`
+
+  console.log(`Building "${template.name}" (${meta.slots.length} slots)...`)
+
+  for (const slot of meta.slots) {
+    const newSegId = idMap.get(slot.segmentId)
+    if (!newSegId) { console.warn(`  [${slot.slotId}] segment not found`); continue }
+
+    const found = findSegment(project, newSegId)
+    if (!found || found.seg.type !== 'video') {
+      console.warn(`  [${slot.slotId}] not a video segment`); continue
+    }
+
+    const clip = pickClip(byCategory, slot.clipCategory)
+    if (!clip) {
+      console.warn(`  [${slot.slotId}] no clip for "${slot.clipCategory}"`); continue
+    }
+
+    // Swap clip source — position, crop, scale, zoom keyframes are preserved
+    const videoSeg = found.seg as VideoSegment
+    videoSeg.src = clip.path
+    videoSeg.name = clip.name
+    videoSeg.sourceWidth = clip.width
+    videoSeg.sourceHeight = clip.height
+    videoSeg.fileDurationUs = clip.durationUs
+    videoSeg.sourceDurationUs = Math.min(videoSeg.durationUs, clip.durationUs)
+    videoSeg.sourceStartUs = 0
+
+    console.log(`  [${slot.slotId}] → ${clip.name} (${slot.clipCategory})`)
+
+    // Swap text variant if available
+    if (slot.textSegmentId && slot.textVariants?.length) {
+      const newTextId = idMap.get(slot.textSegmentId)
+      if (newTextId) {
+        const textFound = findSegment(project, newTextId)
+        if (textFound && textFound.seg.type === 'text') {
+          const variant = slot.textVariants[Math.floor(Math.random() * slot.textVariants.length)]
+          ;(textFound.seg as any).text = variant
+          console.log(`  [${slot.slotId}] text: "${variant.replace(/\n/g, ' / ')}"`)
+        }
+      }
+    }
+  }
+
+  if (meta.audioSwappable) {
+    let totalDurationSec = 0
+    for (const track of project.tracks) {
+      for (const seg of track.segments) {
+        const end = (seg.startUs + seg.durationUs) / 1e6
+        if (end > totalDurationSec) totalDurationSec = end
+      }
+    }
+
+    let hookDurationSec = meta.hookDurationSec ?? 4.2
+    if (!meta.hookDurationSec && meta.slots.length > 0) {
+      const firstSegId = idMap.get(meta.slots[0].segmentId)
+      if (firstSegId) {
+        const found = findSegment(project, firstSegId)
+        if (found) hookDurationSec = found.seg.durationUs / 1e6
+      }
+    }
+
+    const result = pickAudioTrack(hookDurationSec, totalDurationSec)
+    if (result) {
+      const audioIdx = project.tracks.findIndex(t => t.type === 'audio')
+      if (audioIdx >= 0) project.tracks[audioIdx] = result.track
+      else project.tracks.push(result.track)
+      console.log(`  [music] ${result.audioName}`)
+    }
+  }
+
+  saveAndPreview(project, accountId, opts.noTelegram)
+}
+
+// Legacy build for old-format templates (slots at top level, no templateMeta)
+function buildFromLegacyTemplate(template: any, args: string[]): void {
   let projectName = ''
   let topic = ''
   let hookClipId = ''
@@ -254,22 +389,16 @@ export function cmdVideoBuild(args: string[]): void {
     }
   }
 
-  // Load template
-  const templatePath = join(getTemplatesDir(), `${templateId}.json`)
-  if (!existsSync(templatePath)) { console.error(`Template "${templateId}" not found`); process.exit(1) }
-  const template = JSON.parse(readFileSync(templatePath, 'utf-8'))
-
   const accountId = getActiveAccountId()
   const byCategory = loadClipsByCategory(accountId)
 
-  // Map category shortcuts to clip IDs
   if (hookClipId)  slotOverrides.push({ slot_id: 'hook', clip_id: hookClipId })
   if (gizmoClipId) slotOverrides.push({ slot_id: 'gizmo', clip_id: gizmoClipId })
 
   const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[], muted: true }
   const textTrack  = { id: uid(), type: 'text'  as const, label: 'TEXT',  segments: [] as any[] }
 
-  console.log(`Building "${template.name}" (${template.slots.length} slots)...`)
+  console.log(`Building "${template.name}" (${template.slots.length} slots, legacy format)...`)
 
   for (const slot of template.slots) {
     const override = slotOverrides.find(o => o.slot_id === slot.slot_id)
@@ -278,9 +407,7 @@ export function cmdVideoBuild(args: string[]): void {
 
     const clip = pickClip(byCategory, slot.clip_category, override?.clip_id)
     if (clip) {
-      // Clamp source duration so we don't exceed file length
-      const maxSourceUs = clip.durationUs - 0
-      const sourceDurUs = Math.min(durationUs, maxSourceUs)
+      const sourceDurUs = Math.min(durationUs, clip.durationUs)
       videoTrack.segments.push({
         id: uid(), type: 'video',
         src: clip.path, name: clip.name,
@@ -290,16 +417,14 @@ export function cmdVideoBuild(args: string[]): void {
         clipX: 0, clipY: 0, clipScale: 1,
         cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0,
       })
-      console.log(`  [${slot.slot_id}] → ${clip.name} (${(clip.durationUs / 1e6).toFixed(1)}s clip, ${(durationUs / 1e6).toFixed(1)}s used)`)
+      console.log(`  [${slot.slot_id}] → ${clip.name}`)
     } else {
-      console.warn(`  [${slot.slot_id}] ⚠ No clip found for category "${slot.clip_category}"`)
+      console.warn(`  [${slot.slot_id}] no clip for "${slot.clip_category}"`)
     }
 
-    // Text: prefer override text, then topic-derived text, then template example
     let text = override?.text ?? slot.text?.example ?? ''
-    if (topic && slot.slot_id === 'hook' && slot.text?.example) {
-      // Replace placeholder topic in example text with the actual topic
-      text = slot.text.example.replace(/\[TOPIC\]/gi, topic).replace(/\[topic\]/gi, topic)
+    if (topic && slot.text?.example) {
+      text = slot.text.example.replace(/\[TOPIC\]/gi, topic)
     }
     if (text) {
       textTrack.segments.push({
@@ -308,64 +433,25 @@ export function cmdVideoBuild(args: string[]): void {
         x: 0, y: slot.text?.y ?? 0.28,
         fontSize: slot.text?.fontSize ?? 72,
         color: '#ffffff', bold: false, italic: false,
-        strokeEnabled: true, strokeColor: '#000000', strokeWidth: 4,
+        strokeEnabled: true, strokeColor: '#000000',
         textAlign: 'center', textScale: 1,
       })
-      console.log(`  [${slot.slot_id}] text: "${text.replace(/\n/g, ' / ')}"`)
     }
   }
-
-  // Merge text segments with identical content+style into a single spanning segment
-  // (persistent text that repeats across slots becomes one continuous overlay)
-  const mergedTextSegs: any[] = []
-  for (const seg of textTrack.segments) {
-    const styleKey = `${seg.text}|${seg.x}|${seg.y}|${seg.fontSize}|${seg.color}|${seg.bold}|${seg.italic}|${seg.strokeEnabled}|${seg.strokeColor}|${seg.textAlign}`
-    const existing = mergedTextSegs.find(s =>
-      `${s.text}|${s.x}|${s.y}|${s.fontSize}|${s.color}|${s.bold}|${s.italic}|${s.strokeEnabled}|${s.strokeColor}|${s.textAlign}` === styleKey
-    )
-    if (existing) {
-      // Extend the existing segment to cover this one too
-      const end = Math.max(existing.startUs + existing.durationUs, seg.startUs + seg.durationUs)
-      existing.startUs = Math.min(existing.startUs, seg.startUs)
-      existing.durationUs = end - existing.startUs
-      console.log(`  [merge] persistent text spans to ${(existing.durationUs / 1e6).toFixed(2)}s: "${seg.text.replace(/\n/g, ' / ')}"`)
-    } else {
-      mergedTextSegs.push({ ...seg })
-    }
-  }
-  textTrack.segments = mergedTextSegs
 
   const finalName = projectName || `${template.name} - ${new Date().toLocaleDateString()}`
   const totalDurationSec = template.total_duration_sec
   const hookDurationSec: number = template.slots?.[0]?.duration_sec ?? 4.2
 
-  // ─── Auto-pick music from audio library ───────────────────────────────────
-  const tracks: any[] = [videoTrack, textTrack]
-  if (!noTelegram) { /* music always on unless --no-music passed */ }
-  const audioTrack = pickAudioTrack(hookDurationSec, totalDurationSec)
-  if (audioTrack) {
-    tracks.push(audioTrack)
-    console.log(`\n  [music] ${audioTrack._audioName} (drop @ ${(audioTrack.segments[0].dropTimeUs / 1e6).toFixed(2)}s aligned to hook cut)`)
-    delete audioTrack._audioName
+  const tracks: Track[] = [videoTrack, textTrack]
+  const result = pickAudioTrack(hookDurationSec, totalDurationSec)
+  if (result) {
+    tracks.push(result.track)
+    console.log(`  [music] ${result.audioName}`)
   }
 
-  const project = {
-    name: finalName,
-    accountId,
-    canvas: { width: 1080, height: 1920 },
-    tracks,
-  }
-
-  const projectsDir = getProjectsDir(accountId)
-  mkdirSync(projectsDir, { recursive: true })
-  const safeFilename = finalName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-').toLowerCase()
-  const projectPath = join(projectsDir, `${safeFilename}.json`)
-  saveProject(projectPath, project)
-  console.log(`\nSaved: ${projectPath}`)
-
-  // Render previews + telegram
-  console.log('\nRendering preview frames...')
-  previewAndTelegram(projectPath, !noTelegram)
+  const project: Project = { name: finalName, accountId, canvas: { width: 1080, height: 1920 }, tracks }
+  saveAndPreview(project, accountId, noTelegram)
 }
 
 // ─── video preview ────────────────────────────────────────────────────────
