@@ -72,6 +72,25 @@ export interface Project {
   accountId?: string
   canvas: { width: number; height: number }
   tracks: Track[]
+  templateMeta?: TemplateMeta
+}
+
+// ── Template types ──────────────────────────────────────────────────────────
+
+export interface TemplateSlot {
+  slotId: string
+  segmentId: string
+  clipCategory: string
+  textSegmentId?: string
+  textVariants?: string[]
+}
+
+export interface TemplateMeta {
+  id: string
+  description?: string
+  hookDurationSec?: number
+  slots: TemplateSlot[]
+  audioSwappable?: boolean
 }
 
 export interface Account {
