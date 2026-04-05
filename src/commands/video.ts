@@ -52,18 +52,22 @@ function loadClipsByCategory(accountId: string): Record<string, ClipEntry[]> {
 function pickClip(
   byCategory: Record<string, ClipEntry[]>,
   category: string,
-  opts?: { preferId?: string; usedIds?: Set<string> }
+  opts?: { preferId?: string; usedIds?: Set<string>; minDurationUs?: number }
 ): ClipEntry | null {
   if (opts?.preferId) {
     for (const clips of Object.values(byCategory)) {
       const found = clips.find(c => c.id === opts.preferId)
-      if (found) return found
+      if (found) {
+        if (opts.minDurationUs && found.durationUs < opts.minDurationUs) {
+          console.warn(`  ⚠ clip "${found.name}" is ${(found.durationUs / 1e6).toFixed(1)}s but slot needs ${(opts.minDurationUs / 1e6).toFixed(1)}s`)
+        }
+        return found
+      }
     }
   }
 
   let pool: ClipEntry[] = byCategory[category] || []
   if (!pool.length) {
-    // Prefix match: "showcase" collects "showcase/scribble" + "showcase/feynman"
     const prefix = category + '/'
     for (const [cat, clips] of Object.entries(byCategory)) {
       if (cat.startsWith(prefix)) pool.push(...clips)
@@ -73,6 +77,12 @@ function pickClip(
   if (opts?.usedIds?.size) {
     const filtered = pool.filter(c => !opts.usedIds!.has(c.id))
     if (filtered.length) pool = filtered
+  }
+
+  // Prefer clips that are long enough for the slot
+  if (opts?.minDurationUs && pool.length > 1) {
+    const longEnough = pool.filter(c => c.durationUs >= opts.minDurationUs!)
+    if (longEnough.length) pool = longEnough
   }
 
   if (!pool.length) return null
@@ -290,6 +300,7 @@ function buildFromTemplateMeta(
     const clip = pickClip(byCategory, slot.clipCategory, {
       preferId: overrideClipId,
       usedIds: usedClipIds,
+      minDurationUs: found.seg.durationUs,
     })
     if (!clip) {
       console.warn(`  [${slot.slotId}] no clip for "${slot.clipCategory}"`); continue
