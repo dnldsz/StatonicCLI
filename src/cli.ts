@@ -5,12 +5,11 @@ import { cmdProjectRead, cmdProjectList, cmdProjectWrite, cmdProjectExport } fro
 import { cmdSegmentUpdate, cmdSegmentDelete, cmdSegmentAddText, cmdSegmentAddZoom } from './commands/segment.js'
 import { cmdPreview, cmdFrames, cmdVideoInfo } from './commands/preview.js'
 import { cmdClipAnalyze, cmdClipIndex, cmdClipSearch, cmdClipList } from './commands/clip.js'
-import { cmdTemplateList, cmdTemplateUse } from './commands/template.js'
+import { cmdTemplateList } from './commands/template.js'
 import { cmdAccountList, cmdAccountSet, cmdAccountCreate } from './commands/account.js'
 import { cmdAudioFind, cmdAudioExtractReel, cmdAudioList } from './commands/audio.js'
 import { cmdHookGenerate, cmdHookLearn } from './commands/hook.js'
 import { cmdVariationCreate } from './commands/variation.js'
-import { cmdMigrate } from './commands/migrate.js'
 import { cmdTelegram } from './commands/telegram.js'
 import { cmdReelDownload, cmdReelDetect, cmdReelAnalyze, cmdReelBatch, cmdReelInspect, cmdReelInsights, cmdReelTop } from './commands/reel.js'
 import { cmdVideoBuild, cmdVideoPreview } from './commands/video.js'
@@ -20,6 +19,10 @@ const HELP = `statonic — headless video editor CLI
 
 USAGE:
   statonic <command> [subcommand] [options]
+
+VIDEO:
+  video build <template-id> [--name "..."] [--account <id>] [--clips '{"slot_0":"clipId",...}'] [--no-telegram]
+  video preview <project-path> [--telegram] [--times 1,3,5]
 
 PROJECT:
   project read <path>                    Read and summarize a project
@@ -33,7 +36,7 @@ SEGMENT:
   segment add-text <project> --text "..." --start <s> --duration <s> [--x 0] [--y 0] [--font-size 80]
   segment add-zoom <project> <id> --keyframes '<json>'
 
-PREVIEW / VIDEO:
+PREVIEW:
   preview <project> [--time <s>] [--output <path>]
   frames <video-path> [--times 1,2.5,4] [--output-dir ./]
   video-info <video-path>
@@ -45,8 +48,7 @@ CLIP LIBRARY:
   clip list [--category <cat>] [--account <id>]
 
 TEMPLATES:
-  template list
-  template use <id> [--name "..."] [--slots <json>]
+  template list [--json]
 
 HOOKS:
   hook generate <topic>
@@ -65,10 +67,6 @@ ACCOUNTS:
   account set <id>
   account create <name>
 
-VIDEO:
-  video build <template-id> [--name "..."] [--topic "..."] [--hook <clip-id>] [--gizmo <clip-id>] [--no-telegram]
-  video preview <project-path> [--telegram] [--times 1,3,5]
-
 REEL ANALYSIS:
   reel download <url> [--views <n>] [--company <name>]
   reel detect <id-or-path> [--threshold <0.3>]
@@ -81,7 +79,6 @@ REEL ANALYSIS:
 UTILITY:
   status [--json]                        Show complete workspace state
   telegram <file-path> [--caption "..."]
-  migrate                                Migrate data from Electron app
   config                                 Show current config
 `
 
@@ -134,7 +131,6 @@ async function main(): Promise<void> {
     case 'template':
       switch (sub) {
         case 'list': return cmdTemplateList(rest)
-        case 'use': return cmdTemplateUse(rest)
         default: console.error(`Unknown template subcommand: ${sub}`); process.exit(1)
       }
       break
@@ -195,7 +191,6 @@ async function main(): Promise<void> {
 
     case 'status': return cmdStatus(args.slice(1))
     case 'telegram': return cmdTelegram(args.slice(1))
-    case 'migrate': return cmdMigrate()
     case 'config': {
       if (sub === 'set' && rest[0] && rest[1]) {
         saveConfig({ [rest[0]]: rest[1] } as any)

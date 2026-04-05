@@ -1,11 +1,9 @@
-import { existsSync, readdirSync, mkdirSync, statSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readdirSync, mkdirSync, statSync } from 'fs'
 import { join, basename, dirname } from 'path'
-import { randomBytes } from 'crypto'
-import { tmpdir } from 'os'
-import { spawnSync } from 'child_process'
 import { readProject, saveProject, summariseProject } from '../project.js'
 import { getProjectsDir, getActiveAccountId, loadConfig } from '../config.js'
 import { exportVideo } from '../ffmpeg.js'
+import { telegramSendVideo } from './telegram.js'
 
 export function cmdProjectRead(args: string[]): void {
   const path = args[0]
@@ -115,53 +113,12 @@ export async function cmdProjectExport(args: string[]): Promise<void> {
     console.log(`Export complete: ${result.filePath}`)
     if (sendTelegram) {
       console.log('Sending to Telegram...')
-      telegramSendVideo(result.filePath!, project.name ?? basename(outputPath))
+      if (telegramSendVideo(result.filePath!, project.name ?? basename(outputPath))) {
+        console.log('  Sent to Telegram.')
+      }
     }
   } else {
     console.error(`Export failed: ${result.error}`)
     process.exit(1)
-  }
-}
-
-function telegramSendVideo(filePath: string, caption: string): void {
-  const config = loadConfig()
-  const token = process.env.TELEGRAM_BOT_TOKEN || config.telegramBotToken
-  const chatId = process.env.TELEGRAM_CHAT_ID || config.telegramChatId
-  if (!token || !chatId) { console.warn('  [telegram] No credentials — skipping.'); return }
-
-  const fileData = readFileSync(filePath)
-  const fileName = basename(filePath)
-  const boundary = `----FormBoundary${randomBytes(8).toString('hex')}`
-  const CRLF = '\r\n'
-  const parts: Buffer[] = []
-
-  const addField = (name: string, value: string) =>
-    parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`))
-
-  addField('chat_id', chatId)
-  addField('caption', caption)
-  addField('supports_streaming', 'true')
-  parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="video"; filename="${fileName}"${CRLF}Content-Type: video/mp4${CRLF}${CRLF}`))
-  parts.push(fileData)
-  parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`))
-
-  const body = Buffer.concat(parts)
-  const tmpBody = join(tmpdir(), `tg_${randomBytes(4).toString('hex')}.bin`)
-  writeFileSync(tmpBody, body)
-
-  const r = spawnSync('curl', [
-    '-s', '-X', 'POST',
-    `https://api.telegram.org/bot${token}/sendVideo`,
-    '-H', `Content-Type: multipart/form-data; boundary=${boundary}`,
-    '--data-binary', `@${tmpBody}`,
-  ], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 })
-  spawnSync('rm', ['-f', tmpBody])
-
-  try {
-    const resp = JSON.parse(r.stdout)
-    if (resp.ok) console.log('  Sent to Telegram.')
-    else console.warn(`  [telegram] Error: ${resp.description}`)
-  } catch {
-    console.warn(`  [telegram] Bad response: ${r.stdout?.slice(0, 100)}`)
   }
 }

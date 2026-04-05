@@ -1,66 +1,14 @@
 import { existsSync, readdirSync, readFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { spawnSync } from 'child_process'
-import { randomBytes } from 'crypto'
 import { tmpdir } from 'os'
-import { writeFileSync } from 'fs'
 import {
   getTemplatesDir, getActiveAccountId, getClipLibraryDir,
-  getProjectsDir, getAudioLibraryDir, loadConfig,
+  getProjectsDir, getAudioLibraryDir,
 } from '../config.js'
 import { uid, saveProject, readProject, snapToFrame, findSegment } from '../project.js'
-import type { Project, TemplateMeta, Track, VideoSegment, Segment } from '../types.js'
+import type { Project, TemplateMeta, Track, VideoSegment } from '../types.js'
 import { renderPreview } from '../ffmpeg.js'
-
-// ─── Telegram helper (same logic as telegram.ts but callable internally) ───
-
-function telegramSend(filePath: string, caption: string): void {
-  const config = loadConfig()
-  const token = process.env.TELEGRAM_BOT_TOKEN || config.telegramBotToken
-  const chatId = process.env.TELEGRAM_CHAT_ID || config.telegramChatId
-  if (!token || !chatId) {
-    console.warn('  [telegram] No credentials — skipping send.')
-    return
-  }
-  if (!existsSync(filePath)) {
-    console.warn(`  [telegram] File not found: ${filePath}`)
-    return
-  }
-
-  const fileData = readFileSync(filePath)
-  const fileName = filePath.split('/').pop()!
-  const boundary = `----FormBoundary${randomBytes(8).toString('hex')}`
-  const CRLF = '\r\n'
-  const parts: Buffer[] = []
-
-  const addField = (name: string, value: string) =>
-    parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`))
-
-  addField('chat_id', chatId)
-  if (caption) addField('caption', caption)
-  parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="document"; filename="${fileName}"${CRLF}Content-Type: application/octet-stream${CRLF}${CRLF}`))
-  parts.push(fileData)
-  parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`))
-
-  const body = Buffer.concat(parts)
-  const tmpBody = join(tmpdir(), `tg_${randomBytes(4).toString('hex')}.bin`)
-  writeFileSync(tmpBody, body)
-
-  const r = spawnSync('curl', [
-    '-s', '-X', 'POST',
-    `https://api.telegram.org/bot${token}/sendDocument`,
-    '-H', `Content-Type: multipart/form-data; boundary=${boundary}`,
-    '--data-binary', `@${tmpBody}`,
-  ], { encoding: 'utf-8' })
-  spawnSync('rm', ['-f', tmpBody])
-
-  try {
-    const resp = JSON.parse(r.stdout)
-    if (!resp.ok) console.warn(`  [telegram] Error: ${resp.description}`)
-  } catch {
-    console.warn(`  [telegram] Bad response: ${r.stdout?.slice(0, 100)}`)
-  }
-}
+import { telegramSendDocument } from './telegram.js'
 
 // ─── Clip library loader ───────────────────────────────────────────────────
 
@@ -71,8 +19,6 @@ interface ClipEntry {
   durationUs: number
   width: number
   height: number
-  tags: string[]
-  description: string
 }
 
 function loadClipsByCategory(accountId: string): Record<string, ClipEntry[]> {
@@ -97,50 +43,16 @@ function loadClipsByCategory(accountId: string): Record<string, ClipEntry[]> {
         durationUs: Math.round((meta.duration || 5) * 1e6),
         width: meta.width || 1080,
         height: meta.height || 1920,
-        tags: meta.tags ?? [],
-        description: meta.description ?? '',
       })
     } catch { /* skip corrupt metadata */ }
   }
   return byCategory
 }
 
-// Words in text that imply related clip concepts
-const SYNONYM_MAP: Record<string, string[]> = {
-  'technique': ['demonstrating', 'explaining', 'demo', 'method', 'showing'],
-  'method': ['demonstrating', 'explaining', 'demo', 'technique', 'showing'],
-  'feynman': ['explaining', 'demonstrating', 'teach', 'confident', 'direct camera'],
-  'scribble': ['drawing', 'scribbling', 'writing', 'notes', 'overhead'],
-  'gamification': ['gizmo', 'quiz', 'flashcards', 'gamified', 'active recall'],
-  'cheat': ['notes', 'revision', 'handwritten', 'study'],
-  'recall': ['active recall', 'flashcards', 'quiz', 'gizmo'],
-}
-
-/** Score how well a clip matches a text query. Higher = better match. */
-function scoreClipForText(clip: ClipEntry, text: string): number {
-  if (!text) return 0
-  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2)
-  if (!words.length) return 0
-
-  const searchable = [clip.name, clip.description, ...clip.tags].join(' ').toLowerCase()
-  let score = 0
-  for (const word of words) {
-    if (searchable.includes(word)) score += 2
-    // Check synonyms
-    const synonyms = SYNONYM_MAP[word]
-    if (synonyms) {
-      for (const syn of synonyms) {
-        if (searchable.includes(syn)) { score++; break }
-      }
-    }
-  }
-  return score
-}
-
 function pickClip(
   byCategory: Record<string, ClipEntry[]>,
   category: string,
-  opts?: { preferId?: string; text?: string; usedIds?: Set<string> }
+  opts?: { preferId?: string; usedIds?: Set<string> }
 ): ClipEntry | null {
   if (opts?.preferId) {
     for (const clips of Object.values(byCategory)) {
@@ -151,27 +63,18 @@ function pickClip(
 
   let pool = byCategory[category] || []
 
-  // Exclude already-used clips to avoid repeats
   if (opts?.usedIds?.size) {
     const filtered = pool.filter(c => !opts.usedIds!.has(c.id))
     if (filtered.length) pool = filtered
   }
 
   if (!pool.length) return null
-
-  // If text provided, score clips within this category and pick best match
-  if (opts?.text) {
-    const scored = pool.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
-    scored.sort((a, b) => b.score - a.score)
-    if (scored[0].score > 0) return scored[0].clip
-  }
-
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
 // ─── Build preview frames and telegram them ───────────────────────────────
 
-export function previewAndTelegram(projectPath: string, doTelegram: boolean): void {
+function previewAndTelegram(projectPath: string, doTelegram: boolean): void {
   const project = readProject(projectPath)
 
   // Find total duration from last segment end
@@ -218,7 +121,7 @@ export function previewAndTelegram(projectPath: string, doTelegram: boolean): vo
     console.log(`\n  Sending ${previews.length} preview frames to Telegram...`)
     for (const { path, label, timeSec } of previews) {
       const caption = `🎬 ${label} @ ${timeSec.toFixed(1)}s — ${project.name}`
-      telegramSend(path, caption)
+      telegramSendDocument(path, caption)
       console.log(`  Sent [${label}]`)
     }
   }
@@ -293,11 +196,7 @@ export function cmdVideoBuild(args: string[]): void {
         try {
           const t = JSON.parse(readFileSync(join(dir, f), 'utf-8'))
           const meta = t.templateMeta
-          if (meta) {
-            console.error(`  ${meta.id} — ${t.name} (${meta.slots?.length ?? 0} slots)`)
-          } else {
-            console.error(`  ${t.id ?? f.replace('.json', '')} — ${t.name} (legacy format)`)
-          }
+          if (meta) console.error(`  ${meta.id} — ${t.name} (${meta.slots?.length ?? 0} slots)`)
         } catch {}
       }
     }
@@ -321,11 +220,11 @@ export function cmdVideoBuild(args: string[]): void {
   if (!existsSync(templatePath)) { console.error(`Template "${templateId}" not found`); process.exit(1) }
   const template = JSON.parse(readFileSync(templatePath, 'utf-8'))
 
-  if (template.templateMeta) {
-    buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram, clipOverrides })
-  } else {
-    buildFromLegacyTemplate(template, args)
+  if (!template.templateMeta) {
+    console.error('Template missing templateMeta — legacy format no longer supported.')
+    process.exit(1)
   }
+  buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram, clipOverrides })
 }
 
 function saveAndPreview(project: Project, accountId: string, noTelegram: boolean): void {
@@ -380,26 +279,9 @@ function buildFromTemplateMeta(
       console.warn(`  [${slot.slotId}] not a video segment`); continue
     }
 
-    // Get the slot's text for clip matching (from linked text segment or variants)
-    let slotText = ''
-    if (slot.textSegmentId) {
-      const newTextId = idMap.get(slot.textSegmentId)
-      if (newTextId) {
-        const textFound = findSegment(project, newTextId)
-        if (textFound && textFound.seg.type === 'text') {
-          slotText = (textFound.seg as any).text ?? ''
-        }
-      }
-    }
-    if (!slotText && slot.textVariants?.length) {
-      slotText = slot.textVariants[0]
-    }
-
-    // Use explicit clip override if provided, otherwise pick by category + text
     const overrideClipId = opts.clipOverrides?.[slot.slotId]
     const clip = pickClip(byCategory, slot.clipCategory, {
       preferId: overrideClipId,
-      text: overrideClipId ? undefined : slotText,
       usedIds: usedClipIds,
     })
     if (!clip) {
@@ -463,91 +345,6 @@ function buildFromTemplateMeta(
   saveAndPreview(project, accountId, opts.noTelegram)
 }
 
-// Legacy build for old-format templates (slots at top level, no templateMeta)
-function buildFromLegacyTemplate(template: any, args: string[]): void {
-  let projectName = ''
-  let topic = ''
-  let hookClipId = ''
-  let gizmoClipId = ''
-  let noTelegram = false
-  const slotOverrides: Array<{ slot_id: string; clip_id?: string; text?: string }> = []
-
-  for (let i = 1; i < args.length; i++) {
-    if (args[i] === '--name'     && args[i + 1]) projectName = args[++i]
-    if (args[i] === '--topic'    && args[i + 1]) topic = args[++i]
-    if (args[i] === '--hook'     && args[i + 1]) hookClipId = args[++i]
-    if (args[i] === '--gizmo'    && args[i + 1]) gizmoClipId = args[++i]
-    if (args[i] === '--no-telegram') noTelegram = true
-    if (args[i] === '--slot'     && args[i + 1]) {
-      try { slotOverrides.push(JSON.parse(args[++i])) } catch {}
-    }
-  }
-
-  const accountId = getActiveAccountId()
-  const byCategory = loadClipsByCategory(accountId)
-
-  if (hookClipId)  slotOverrides.push({ slot_id: 'hook', clip_id: hookClipId })
-  if (gizmoClipId) slotOverrides.push({ slot_id: 'gizmo', clip_id: gizmoClipId })
-
-  const videoTrack = { id: uid(), type: 'video' as const, label: 'VIDEO', segments: [] as any[], muted: true }
-  const textTrack  = { id: uid(), type: 'text'  as const, label: 'TEXT',  segments: [] as any[] }
-
-  console.log(`Building "${template.name}" (${template.slots.length} slots, legacy format)...`)
-
-  for (const slot of template.slots) {
-    const override = slotOverrides.find(o => o.slot_id === slot.slot_id)
-    const startUs    = snapToFrame(Math.round(slot.start_sec * 1e6))
-    const durationUs = snapToFrame(Math.round(slot.duration_sec * 1e6))
-
-    const clip = pickClip(byCategory, slot.clip_category, { preferId: override?.clip_id })
-    if (clip) {
-      const sourceDurUs = Math.min(durationUs, clip.durationUs)
-      videoTrack.segments.push({
-        id: uid(), type: 'video',
-        src: clip.path, name: clip.name,
-        startUs, durationUs,
-        sourceStartUs: 0, sourceDurationUs: sourceDurUs, fileDurationUs: clip.durationUs,
-        sourceWidth: clip.width, sourceHeight: clip.height,
-        clipX: 0, clipY: 0, clipScale: 1,
-        cropLeft: 0, cropRight: 0, cropTop: 0, cropBottom: 0,
-      })
-      console.log(`  [${slot.slot_id}] → ${clip.name}`)
-    } else {
-      console.warn(`  [${slot.slot_id}] no clip for "${slot.clip_category}"`)
-    }
-
-    let text = override?.text ?? slot.text?.example ?? ''
-    if (topic && slot.text?.example) {
-      text = slot.text.example.replace(/\[TOPIC\]/gi, topic)
-    }
-    if (text) {
-      textTrack.segments.push({
-        id: uid(), type: 'text', text,
-        startUs, durationUs,
-        x: 0, y: slot.text?.y ?? 0.28,
-        fontSize: slot.text?.fontSize ?? 72,
-        color: '#ffffff', bold: false, italic: false,
-        strokeEnabled: true, strokeColor: '#000000',
-        textAlign: 'center', textScale: 1,
-      })
-    }
-  }
-
-  const finalName = projectName || `${template.name} - ${new Date().toLocaleDateString()}`
-  const totalDurationSec = template.total_duration_sec
-  const hookDurationSec: number = template.slots?.[0]?.duration_sec ?? 4.2
-
-  const tracks: Track[] = [videoTrack, textTrack]
-  const result = pickAudioTrack(hookDurationSec, totalDurationSec)
-  if (result) {
-    tracks.push(result.track)
-    console.log(`  [music] ${result.audioName}`)
-  }
-
-  const project: Project = { name: finalName, accountId, canvas: { width: 1080, height: 1920 }, tracks }
-  saveAndPreview(project, accountId, noTelegram)
-}
-
 // ─── video preview ────────────────────────────────────────────────────────
 
 export function cmdVideoPreview(args: string[]): void {
@@ -577,7 +374,7 @@ export function cmdVideoPreview(args: string[]): void {
         const result = renderPreview(project, t, outPath)
         console.log(`  @ ${t.toFixed(2)}s → ${result}`)
         if (doTelegram) {
-          telegramSend(result, `🎬 @ ${t.toFixed(1)}s — ${project.name}`)
+          telegramSendDocument(result, `🎬 @ ${t.toFixed(1)}s — ${project.name}`)
           console.log(`  Sent to Telegram`)
         }
       } catch (e: any) {

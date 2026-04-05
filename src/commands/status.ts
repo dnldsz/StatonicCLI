@@ -81,21 +81,22 @@ export function cmdStatus(args: string[]): void {
     const out = {
       activeAccount: { id: activeId, name: activeAccount?.name ?? activeId },
       accounts: accounts.map(a => ({ id: a.id, name: a.name, active: a.id === activeId })),
-      templates: templates.map(t => ({
-        id: t.id,
-        name: t.name,
-        description: t.description ?? '',
-        total_duration_sec: t.total_duration_sec,
-        slots: (t.slots ?? []).map((s: any) => ({
-          slot_id: s.slot_id,
-          clip_category: s.clip_category,
-          start_sec: s.start_sec,
-          duration_sec: s.duration_sec,
-          text_example: s.text?.example ?? '',
-          text_y: s.text?.y,
-          text_font_size: s.text?.fontSize,
-        })),
-      })),
+      templates: templates.filter((t: any) => t.templateMeta).map((t: any) => {
+        const meta = t.templateMeta
+        return {
+          id: meta.id,
+          name: t.name,
+          description: meta.description ?? '',
+          audioSwappable: meta.audioSwappable ?? false,
+          hookDurationSec: meta.hookDurationSec,
+          slots: (meta.slots ?? []).map((s: any) => ({
+            slotId: s.slotId,
+            clipCategory: s.clipCategory,
+            segmentId: s.segmentId,
+            textVariants: s.textVariants ?? [],
+          })),
+        }
+      }),
       clipLibrary: {
         accountId: activeId,
         totalClips,
@@ -135,21 +136,22 @@ export function cmdStatus(args: string[]): void {
   }
 
   // Templates
-  console.log(`TEMPLATES  (${templates.length} template${templates.length !== 1 ? 's' : ''})`)
-  if (templates.length === 0) {
+  const validTemplates = templates.filter((t: any) => t.templateMeta)
+  console.log(`TEMPLATES  (${validTemplates.length} template${validTemplates.length !== 1 ? 's' : ''})`)
+  if (validTemplates.length === 0) {
     console.log('  (none)')
   } else {
-    for (const t of templates) {
-      console.log(`  ${t.id} — "${t.name}"  ${t.total_duration_sec}s`)
-      if (t.description) console.log(`    ${t.description}`)
-      if (t.slots?.length) {
-        console.log('    Slots:')
-        for (const s of t.slots) {
-          const timeRange = `${s.start_sec.toFixed(1)}s → ${s.duration_sec.toFixed(1)}s`
-          const textHint = s.text?.example
-            ? `  text: "${s.text.example.replace(/\n/g, ' / ').slice(0, 50)}"`
+    for (const t of validTemplates) {
+      const meta = t.templateMeta
+      console.log(`  ${meta.id} — "${t.name}"`)
+      if (meta.description) console.log(`    ${meta.description}`)
+      if (meta.slots?.length) {
+        console.log(`    ${meta.slots.length} slots:`)
+        for (const s of meta.slots) {
+          const textHint = s.textVariants?.length
+            ? `  text: "${s.textVariants[0].replace(/\n/g, ' / ').slice(0, 50)}"`
             : ''
-          console.log(`      ${s.slot_id.padEnd(14)} [clip: ${s.clip_category}]  ${timeRange}${textHint}`)
+          console.log(`      ${s.slotId.padEnd(14)} [${s.clipCategory}]${textHint}`)
         }
       }
       console.log()

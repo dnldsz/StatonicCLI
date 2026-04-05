@@ -23,14 +23,10 @@ export function cmdTemplateList(args: string[] = []): void {
     try {
       const t = JSON.parse(readFileSync(join(dir, f), 'utf-8'))
       const meta = t.templateMeta
-      if (meta) {
-        console.log(`${meta.id} — ${t.name}`)
-        if (meta.description) console.log(`  ${meta.description}`)
-        console.log(`  ${meta.slots?.length ?? 0} slots`)
-      } else {
-        console.log(`${t.id ?? f.replace('.json', '')} — ${t.name} (legacy)`)
-        console.log(`  ${t.slots?.length ?? 0} slots, ${t.total_duration_sec}s total`)
-      }
+      if (!meta) { console.log(`${f} — legacy format (unsupported)`); continue }
+      console.log(`${meta.id} — ${t.name}`)
+      if (meta.description) console.log(`  ${meta.description}`)
+      console.log(`  ${meta.slots?.length ?? 0} slots`)
       console.log()
     } catch {
       console.log(`${f} (parse error)`)
@@ -38,7 +34,3 @@ export function cmdTemplateList(args: string[] = []): void {
   }
 }
 
-export function cmdTemplateUse(_args: string[]): void {
-  console.log('Use "statonic video build <template-id>" instead.')
-  process.exit(0)
-}
