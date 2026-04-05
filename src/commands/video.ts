@@ -64,9 +64,20 @@ function telegramSend(filePath: string, caption: string): void {
 
 // ─── Clip library loader ───────────────────────────────────────────────────
 
-function loadClipsByCategory(accountId: string): Record<string, any[]> {
+interface ClipEntry {
+  id: string
+  path: string
+  name: string
+  durationUs: number
+  width: number
+  height: number
+  tags: string[]
+  description: string
+}
+
+function loadClipsByCategory(accountId: string): Record<string, ClipEntry[]> {
   const clipLibDir = getClipLibraryDir(accountId)
-  const byCategory: Record<string, any[]> = {}
+  const byCategory: Record<string, ClipEntry[]> = {}
   if (!existsSync(clipLibDir)) return byCategory
 
   for (const clipId of readdirSync(clipLibDir)) {
@@ -86,22 +97,58 @@ function loadClipsByCategory(accountId: string): Record<string, any[]> {
         durationUs: Math.round((meta.duration || 5) * 1e6),
         width: meta.width || 1080,
         height: meta.height || 1920,
+        tags: meta.tags ?? [],
+        description: meta.description ?? '',
       })
     } catch { /* skip corrupt metadata */ }
   }
   return byCategory
 }
 
-function pickClip(byCategory: Record<string, any[]>, category: string, preferId?: string): any | null {
-  if (preferId) {
-    // Search all categories for this specific clip ID
+/** Score how well a clip matches a text query. Higher = better match. */
+function scoreClipForText(clip: ClipEntry, text: string): number {
+  if (!text) return 0
+  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2)
+  if (!words.length) return 0
+
+  const searchable = [clip.name, clip.description, ...clip.tags].join(' ').toLowerCase()
+  let score = 0
+  for (const word of words) {
+    if (searchable.includes(word)) score++
+  }
+  return score
+}
+
+function pickClip(
+  byCategory: Record<string, ClipEntry[]>,
+  category: string,
+  opts?: { preferId?: string; text?: string; usedIds?: Set<string> }
+): ClipEntry | null {
+  if (opts?.preferId) {
     for (const clips of Object.values(byCategory)) {
-      const found = clips.find(c => c.id === preferId)
+      const found = clips.find(c => c.id === opts.preferId)
       if (found) return found
     }
   }
-  const pool = byCategory[category] || []
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+
+  let pool = byCategory[category] || []
+
+  // Exclude already-used clips to avoid repeats
+  if (opts?.usedIds?.size) {
+    const filtered = pool.filter(c => !opts.usedIds!.has(c.id))
+    if (filtered.length) pool = filtered
+  }
+
+  if (!pool.length) return null
+
+  // If text provided, score and pick best match
+  if (opts?.text) {
+    const scored = pool.map(c => ({ clip: c, score: scoreClipForText(c, opts.text!) }))
+    scored.sort((a, b) => b.score - a.score)
+    if (scored[0].score > 0) return scored[0].clip
+  }
+
+  return pool[Math.floor(Math.random() * pool.length)]
 }
 
 // ─── Build preview frames and telegram them ───────────────────────────────
@@ -301,6 +348,8 @@ function buildFromTemplateMeta(
 
   console.log(`Building "${template.name}" (${meta.slots.length} slots)...`)
 
+  const usedClipIds = new Set<string>()
+
   for (const slot of meta.slots) {
     const newSegId = idMap.get(slot.segmentId)
     if (!newSegId) { console.warn(`  [${slot.slotId}] segment not found`); continue }
@@ -310,10 +359,26 @@ function buildFromTemplateMeta(
       console.warn(`  [${slot.slotId}] not a video segment`); continue
     }
 
-    const clip = pickClip(byCategory, slot.clipCategory)
+    // Get the slot's text for clip matching (from linked text segment or variants)
+    let slotText = ''
+    if (slot.textSegmentId) {
+      const newTextId = idMap.get(slot.textSegmentId)
+      if (newTextId) {
+        const textFound = findSegment(project, newTextId)
+        if (textFound && textFound.seg.type === 'text') {
+          slotText = (textFound.seg as any).text ?? ''
+        }
+      }
+    }
+    if (!slotText && slot.textVariants?.length) {
+      slotText = slot.textVariants[0]
+    }
+
+    const clip = pickClip(byCategory, slot.clipCategory, { text: slotText, usedIds: usedClipIds })
     if (!clip) {
       console.warn(`  [${slot.slotId}] no clip for "${slot.clipCategory}"`); continue
     }
+    usedClipIds.add(clip.id)
 
     // Swap clip source — position, crop, scale, zoom keyframes are preserved
     const videoSeg = found.seg as VideoSegment
@@ -407,7 +472,7 @@ function buildFromLegacyTemplate(template: any, args: string[]): void {
     const startUs    = snapToFrame(Math.round(slot.start_sec * 1e6))
     const durationUs = snapToFrame(Math.round(slot.duration_sec * 1e6))
 
-    const clip = pickClip(byCategory, slot.clip_category, override?.clip_id)
+    const clip = pickClip(byCategory, slot.clip_category, { preferId: override?.clip_id })
     if (clip) {
       const sourceDurUs = Math.min(durationUs, clip.durationUs)
       videoTrack.segments.push({
