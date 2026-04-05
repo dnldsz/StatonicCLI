@@ -283,13 +283,15 @@ function buildFromTemplateMeta(
   const project: Project = structuredClone(template)
   delete project.templateMeta
 
-  // Assign new IDs to all segments so each build is unique
+  // Assign new IDs and snap all segment times to 30fps frame boundaries
   const idMap = new Map<string, string>()
   for (const track of project.tracks) {
     track.id = uid()
     for (const seg of track.segments) {
       const oldId = seg.id
       seg.id = uid()
+      seg.startUs = snapToFrame(seg.startUs)
+      seg.durationUs = snapToFrame(seg.durationUs)
       idMap.set(oldId, seg.id)
     }
   }
