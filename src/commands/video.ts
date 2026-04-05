@@ -89,12 +89,11 @@ function pickClip(
     }
   }
 
-  let pool: ClipEntry[] = byCategory[category] || []
-  if (!pool.length) {
-    const prefix = category + '/'
-    for (const [cat, clips] of Object.entries(byCategory)) {
-      if (cat.startsWith(prefix)) pool.push(...clips)
-    }
+  // Always include subcategory clips (e.g. "showcase" includes "showcase/feynman")
+  let pool: ClipEntry[] = [...(byCategory[category] || [])]
+  const prefix = category + '/'
+  for (const [cat, clips] of Object.entries(byCategory)) {
+    if (cat.startsWith(prefix)) pool.push(...clips)
   }
 
   if (opts?.usedIds?.size) {
@@ -280,7 +279,7 @@ function saveAndPreview(project: Project, accountId: string, noTelegram: boolean
   saveProject(projectPath, project)
   console.log(`\nSaved: ${projectPath}`)
 
-  writeBuildStatus({ status: 'previewing', projectName: project.name, currentStep: 'Rendering previews...' })
+  writeBuildStatus({ status: 'previewing', projectName: project.name, progress: 0, currentStep: 'Rendering preview frames...' })
   console.log('\nRendering preview frames...')
   previewAndTelegram(projectPath, !noTelegram)
 
@@ -290,7 +289,7 @@ function saveAndPreview(project: Project, accountId: string, noTelegram: boolean
   try {
     const stateDir = join(homedir(), 'Library', 'Application Support', 'Statonic')
     mkdirSync(stateDir, { recursive: true })
-    writeFileSync(join(stateDir, 'load-project.json'), JSON.stringify({ path: projectPath, project }))
+    writeFileSync(join(stateDir, 'load-project.json'), JSON.stringify({ projectPath, project }))
   } catch { /* editor may not be running */ }
 }
 
@@ -329,7 +328,7 @@ function buildFromTemplateMeta(
 
   for (let si = 0; si < meta.slots.length; si++) {
     const slot = meta.slots[si]
-    writeBuildStatus({ status: 'building', templateId: meta.id, projectName: project.name, startedAt: buildStart, progress: si / meta.slots.length, currentStep: `Slot ${si + 1}/${meta.slots.length}` })
+    writeBuildStatus({ status: 'building', templateId: meta.id, projectName: project.name, startedAt: buildStart, progress: si / meta.slots.length, currentStep: `Picking ${slot.clipCategory} clip for slot ${si + 1}/${meta.slots.length}...` })
     const newSegId = idMap.get(slot.segmentId)
     if (!newSegId) { console.warn(`  [${slot.slotId}] segment not found`); continue }
 
@@ -359,6 +358,7 @@ function buildFromTemplateMeta(
     videoSeg.sourceDurationUs = Math.min(videoSeg.durationUs, clip.durationUs)
     videoSeg.sourceStartUs = 0
 
+    writeBuildStatus({ status: 'building', templateId: meta.id, projectName: project.name, startedAt: buildStart, progress: (si + 1) / meta.slots.length, currentStep: `${slot.clipCategory} → ${clip.name}` })
     console.log(`  [${slot.slotId}] → ${clip.name} (${slot.clipCategory})`)
 
     // Swap text variant if available
