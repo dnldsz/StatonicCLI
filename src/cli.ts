@@ -4,7 +4,7 @@ import { loadConfig, saveConfig } from './config.js'
 import { cmdProjectRead, cmdProjectList, cmdProjectWrite, cmdProjectExport } from './commands/project.js'
 import { cmdSegmentUpdate, cmdSegmentDelete, cmdSegmentAddText, cmdSegmentAddZoom } from './commands/segment.js'
 import { cmdPreview, cmdFrames, cmdVideoInfo } from './commands/preview.js'
-import { cmdClipAnalyze, cmdClipIndex, cmdClipSearch, cmdClipList } from './commands/clip.js'
+import { cmdClipAnalyze, cmdClipUpdate, cmdClipList } from './commands/clip.js'
 import { cmdTemplateList } from './commands/template.js'
 import { cmdAccountList, cmdAccountSet, cmdAccountCreate } from './commands/account.js'
 import { cmdAudioFind, cmdAudioExtractReel, cmdAudioList } from './commands/audio.js'
@@ -42,10 +42,9 @@ PREVIEW:
   video-info <video-path>
 
 CLIP LIBRARY:
-  clip analyze <video-path> [--metadata <json>] [--keyframes <n>]
-  clip index [<folder>] [--regenerate]
-  clip search <query> [--category <cat>] [--account <id>]
-  clip list [--category <cat>] [--account <id>]
+  clip analyze <video-path> --metadata '<json>'   Analyze and save clip metadata
+  clip update <clip-id> --metadata '<json>'        Update clip metadata (e.g., category)
+  clip list [--category <cat>] [--account <id>] [--json]
 
 TEMPLATES:
   template list [--json]
@@ -121,8 +120,7 @@ async function main(): Promise<void> {
     case 'clip':
       switch (sub) {
         case 'analyze': return cmdClipAnalyze(rest)
-        case 'index': return cmdClipIndex(rest)
-        case 'search': return cmdClipSearch(rest)
+        case 'update': return cmdClipUpdate(rest)
         case 'list': return cmdClipList(rest)
         default: console.error(`Unknown clip subcommand: ${sub}`); process.exit(1)
       }

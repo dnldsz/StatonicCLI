@@ -160,7 +160,7 @@ statonic video build <template-id> \
   --no-telegram
 ```
 
-If `--clips` is omitted, the CLI falls back to category + text scoring (less accurate).
+If `--clips` is omitted, the CLI picks randomly from the matching category pool.
 
 **Capture the path from**: `Saved: <project-path>`
 
@@ -168,18 +168,21 @@ If `--clips` is omitted, the CLI falls back to category + text scoring (less acc
 
 ## 3. Clip categories
 
-Clips are organized by category. Pick by category and specific ID from `statonic status --json`.
+Clips are organized hierarchically. Pick by category and specific ID from `statonic clip list --json`.
 
 | Category | Purpose |
 |----------|---------|
 | `hook` | Hook clips — stressed student, desk aesthetic, face reactions |
 | `gizmo` | Gizmo app on MacBook/phone — Biology flashcards, +XP screens |
-| `showcase` | Study technique demonstrations — notes, writing, reading |
+| `showcase/feynman` | Feynman-style — gesturing, explaining, demonstrating at desk |
+| `showcase/scribble` | Overhead scribble/writing — notes, drawing, flipping pages |
 
-Pick specific clip IDs based on their descriptions. Examples:
-- "grey hoodie face hide" → student stressed, face partly hidden (generic hook)
-- "black tee side gizmo" → includes Gizmo in frame (good for gizmo slot)
-- "silhouette stressed hook" → dramatic silhouette (high-contrast hook)
+A template slot with category `showcase` accepts any `showcase/*` clip. A slot with `showcase/feynman` accepts only feynman clips.
+
+To re-categorize a clip:
+```
+statonic clip update <clip-id> --metadata '{"category":"showcase/feynman"}'
+```
 
 ---
 
@@ -312,22 +315,26 @@ Sends the exported MP4 as a video (not document) to Telegram after export comple
 # 1. See what's available
 statonic status --json
 
-# 2. Build video (auto-picks clips if no --hook/--gizmo)
-statonic video build hook_gizmo \
+# 2. Read clips to pick the right ones
+statonic clip list --json
+
+# 3. Build video with explicit clip picks
+statonic video build test1 \
+  --account daniel \
+  --clips '{"slot_0":"06c644e713fe","slot_1":"4891e00db967","slot_2":"36243d43bba3","slot_3":"905d783f8534","slot_4":"f4236c5ec2df"}' \
   --name "How to Study Biology" \
-  --hook 06c644e713fe \
   --no-telegram
 
-# 3. Read segment IDs from saved project
+# 4. Read segment IDs from saved project
 statonic project read <saved-path> --json
 
-# 4. Tune text or swap a clip
+# 5. Tune text or swap a clip
 statonic segment update <path> <seg-id> '{"text":"how to study\nbiology\nin 1 hour"}'
 
-# 5. Preview and send
+# 6. Preview and send
 statonic video preview <path> --telegram
 
-# 6. Export and send to Telegram
+# 7. Export and send to Telegram
 statonic project export <path> --telegram
 ```
 

@@ -159,7 +159,7 @@ export function cmdStatus(args: string[]): void {
   }
 
   // Clip library
-  const catNames = Object.keys(clipsByCategory)
+  const catNames = Object.keys(clipsByCategory).sort()
   console.log(`CLIP LIBRARY (account: ${activeId})  ${totalClips} clips in ${catNames.length} categories\n`)
   if (totalClips === 0) {
     console.log('  (none)')

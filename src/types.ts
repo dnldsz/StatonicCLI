@@ -25,12 +25,6 @@ export interface ClipMetadata {
   analyzed_by: string
 }
 
-export interface ClipIndex {
-  clips: ClipMetadata[]
-  categories: string[]
-  last_updated: string
-}
-
 // ── Reel analysis types ──────────────────────────────────────────────────────
 
 export interface ReelMetadata {
@@ -90,20 +84,3 @@ export interface ReelIndexEntry {
   detected: boolean
 }
 
-export interface LibraryClipMeta {
-  id: string
-  accountId: string
-  name: string
-  path: string
-  duration: number
-  width: number
-  height: number
-  category: string
-  analyzed: boolean
-  description?: string
-  tags?: string[]
-  mood?: string
-  subject_visible?: boolean
-  subject_position?: string
-  setting?: string
-}

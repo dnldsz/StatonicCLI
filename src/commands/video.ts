@@ -61,7 +61,14 @@ function pickClip(
     }
   }
 
-  let pool = byCategory[category] || []
+  let pool: ClipEntry[] = byCategory[category] || []
+  if (!pool.length) {
+    // Prefix match: "showcase" collects "showcase/scribble" + "showcase/feynman"
+    const prefix = category + '/'
+    for (const [cat, clips] of Object.entries(byCategory)) {
+      if (cat.startsWith(prefix)) pool.push(...clips)
+    }
+  }
 
   if (opts?.usedIds?.size) {
     const filtered = pool.filter(c => !opts.usedIds!.has(c.id))
