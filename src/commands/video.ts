@@ -285,7 +285,7 @@ function pickAudioTrack(hookDurationSec: number, totalDurationSec: number): { tr
 export function cmdVideoBuild(args: string[]): void {
   const templateId = args[0]
   if (!templateId) {
-    console.error('Usage: statonic video build <template-id> [--name "..."] [--account <id>] [--no-telegram]')
+    console.error('Usage: statonic video build <template-id> [--name "..."] [--account <id>] [--clips \'{"slot_0":"clipId",...}\'] [--no-telegram]')
     console.error('\nAvailable templates:')
     const dir = getTemplatesDir()
     if (existsSync(dir)) {
@@ -307,9 +307,13 @@ export function cmdVideoBuild(args: string[]): void {
   let projectName = ''
   let noTelegram = false
   let accountOverride = ''
+  let clipOverrides: Record<string, string> = {}
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--name' && args[i + 1]) projectName = args[++i]
     if (args[i] === '--account' && args[i + 1]) accountOverride = args[++i]
+    if (args[i] === '--clips' && args[i + 1]) {
+      try { clipOverrides = JSON.parse(args[++i]) } catch {}
+    }
     if (args[i] === '--no-telegram') noTelegram = true
   }
 
@@ -317,9 +321,8 @@ export function cmdVideoBuild(args: string[]): void {
   if (!existsSync(templatePath)) { console.error(`Template "${templateId}" not found`); process.exit(1) }
   const template = JSON.parse(readFileSync(templatePath, 'utf-8'))
 
-  // Route to new or legacy build
   if (template.templateMeta) {
-    buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram })
+    buildFromTemplateMeta(template, { projectName, accountOverride, noTelegram, clipOverrides })
   } else {
     buildFromLegacyTemplate(template, args)
   }
@@ -339,7 +342,7 @@ function saveAndPreview(project: Project, accountId: string, noTelegram: boolean
 
 function buildFromTemplateMeta(
   template: Project & { templateMeta: TemplateMeta },
-  opts: { projectName: string; accountOverride: string; noTelegram: boolean }
+  opts: { projectName: string; accountOverride: string; noTelegram: boolean; clipOverrides?: Record<string, string> }
 ): void {
   const meta = template.templateMeta
   const accountId = opts.accountOverride || getActiveAccountId()
@@ -392,7 +395,13 @@ function buildFromTemplateMeta(
       slotText = slot.textVariants[0]
     }
 
-    const clip = pickClip(byCategory, slot.clipCategory, { text: slotText, usedIds: usedClipIds })
+    // Use explicit clip override if provided, otherwise pick by category + text
+    const overrideClipId = opts.clipOverrides?.[slot.slotId]
+    const clip = pickClip(byCategory, slot.clipCategory, {
+      preferId: overrideClipId,
+      text: overrideClipId ? undefined : slotText,
+      usedIds: usedClipIds,
+    })
     if (!clip) {
       console.warn(`  [${slot.slotId}] no clip for "${slot.clipCategory}"`); continue
     }

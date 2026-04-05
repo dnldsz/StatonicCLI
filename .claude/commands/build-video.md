@@ -134,41 +134,34 @@ Note: single-line hook (no breaks), ✅ at end. Persistent text sets up the body
 
 ---
 
-## 2. Templates
+## 2. Templates (template-first architecture)
 
-Templates define the video structure. Use `statonic status --json` to get the full slot list.
+Templates are full project files authored in StatonicEditor with `templateMeta`. Each video segment is a swappable slot with a category. Use `statonic template list` to see available templates.
 
-### `hook_gizmo` — 6.4s total
-Classic 2-scene format: 4.2s hook → 2.2s Gizmo reveal.
-Best for: statement, bold_claim, relatable hooks.
+### Building from a template
+
+**YOU (Claude Code) must pick the clips.** Do not let the CLI pick randomly. The workflow is:
+
+1. Read the template slots: `statonic template list --json`
+2. Read available clips: `statonic clip list --account <id> --json`
+3. For each slot, read the text and category, then reason about which clip fits best:
+   - Match the clip's description/tags to the slot's text meaning
+   - "FEYNMAN TECHNIQUE" → pick a clip of someone **explaining/demonstrating**, not someone stressed
+   - "GAMIFICATION" → pick a **gizmo** clip showing the app
+   - "SCRIBBLE METHOD" → pick an **overhead scribble/writing** clip
+   - Respect the slot's category but use judgment about what the text actually means
+4. Pass your selections via `--clips`:
 
 ```
-statonic video build hook_gizmo \
-  --name "Study Hook" \
-  --hook <clip-id> \
-  --slot '{"slot_id":"gizmo","clip_id":"<clip-id>","text":"ACTIVE RECALL 🤫"}' \
+statonic video build <template-id> \
+  --account <account-id> \
+  --clips '{"slot_0":"<clip-id>","slot_1":"<clip-id>","slot_2":"<clip-id>"}' \
+  --name "Video Name" \
   --no-telegram
 ```
 
-### `hook_multi_showcase` — 8.2s total
-5-scene format: 4.2s hook → gizmo (1s) → 3x showcase clips (1s each).
-Best for: listicle hooks ("4 techniques that..."), comparison hooks.
+If `--clips` is omitted, the CLI falls back to category + text scoring (less accurate).
 
-```
-statonic video build hook_multi_showcase \
-  --name "4 Techniques" \
-  --hook <clip-id> \
-  --slot '{"slot_id":"technique_1","clip_id":"<clip-id>","text":"ACTIVE RECALL 🤫"}' \
-  --slot '{"slot_id":"technique_2","clip_id":"<clip-id>","text":"SPACED REPETITION 📅"}' \
-  --slot '{"slot_id":"technique_3","clip_id":"<clip-id>","text":"GAMIFICATION 🎮"}' \
-  --slot '{"slot_id":"technique_4","clip_id":"<clip-id>","text":"POMODORO METHOD ⏱️"}' \
-  --no-telegram
-```
-
-`--hook` and `--gizmo` are shortcuts for the `hook` and `gizmo` slot IDs.
-For all other slots use `--slot '{"slot_id":"...","clip_id":"...","text":"..."}'`.
-
-The command saves the project and renders preview frames automatically.
 **Capture the path from**: `Saved: <project-path>`
 
 ---
