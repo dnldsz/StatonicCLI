@@ -10,6 +10,17 @@ export interface ClipTransform {
   transform: { x: number; y: number }
 }
 
+export interface CCKeyframe {
+  time_offset: number
+  values: number[]
+  curveType?: string
+}
+
+export interface CCKeyframeGroup {
+  property_type: string
+  keyframe_list: CCKeyframe[]
+}
+
 export interface CCSegment {
   id: string
   material_id: string
@@ -20,6 +31,7 @@ export interface CCSegment {
   volume: number
   visible: boolean
   extra_material_refs?: string[]
+  common_keyframes?: CCKeyframeGroup[]
 }
 
 export interface CCTrack {

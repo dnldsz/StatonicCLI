@@ -62,10 +62,28 @@ function convertVideoTracks(tracks: CCTrack[], materials: Map<string, CCMaterial
   }))
 }
 
+function extractScaleKeyframes(seg: CCSegment): { timeMs: number; scale: number }[] | undefined {
+  const scaleX = seg.common_keyframes?.find(g => g.property_type === 'KFTypeScaleX')
+  if (!scaleX || scaleX.keyframe_list.length < 2) return undefined
+
+  const kfs = scaleX.keyframe_list
+  const first = kfs[0]
+  const last = kfs[kfs.length - 1]
+
+  // Only convert if there's an actual scale change
+  if (Math.abs(first.values[0] - last.values[0]) < 0.01) return undefined
+
+  return [
+    { timeMs: Math.round(first.time_offset / 1000), scale: first.values[0] },
+    { timeMs: Math.round(last.time_offset / 1000), scale: last.values[0] },
+  ]
+}
+
 function convertVideoSegment(seg: CCSegment, materials: Map<string, CCMaterial>): VideoSegment {
   const mat = materials.get(seg.material_id)
   const srcPath = mat?.path ?? ''
   const name = srcPath ? basename(srcPath).replace(/\.[^.]+$/, '') : 'unknown'
+  const scaleKeyframes = extractScaleKeyframes(seg)
 
   return {
     id: uid(),
@@ -86,6 +104,7 @@ function convertVideoSegment(seg: CCSegment, materials: Map<string, CCMaterial>)
     cropRight: 0,
     cropTop: 0,
     cropBottom: 0,
+    ...(scaleKeyframes && { scaleKeyframes }),
   }
 }
 
