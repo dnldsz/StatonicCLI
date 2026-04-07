@@ -6,7 +6,10 @@ import { flattenMaterials } from './parser.js'
 
 export function convertCapCutToTemplate(draft: DraftInfo, templateId: string): Project {
   const materials = flattenMaterials(draft)
-  const canvas = { width: draft.canvas_config.width, height: draft.canvas_config.height }
+  // Always normalize to 1080x1920 regardless of CapCut project resolution
+  const srcCanvas = { width: draft.canvas_config.width, height: draft.canvas_config.height }
+  const canvas = { width: 1080, height: 1920 }
+  const scaleFactor = canvas.width / srcCanvas.width
 
   const videoTracks = draft.tracks.filter(t => t.type === 'video')
   const textTracks = draft.tracks.filter(t => t.type === 'text')
