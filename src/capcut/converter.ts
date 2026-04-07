@@ -15,7 +15,7 @@ export function convertCapCutToTemplate(draft: DraftInfo, templateId: string): P
   const isABC = videoTracks.length > 1
 
   const stVideoTracks = convertVideoTracks(videoTracks, materials, isABC)
-  const stTextTracks = convertTextTracks(textTracks, materials)
+  const stTextTracks = convertTextTracks(textTracks, materials, canvas.width)
   const stAudioTracks = convertAudioTracks(audioTracks, materials)
 
   const allVideoSegs = stVideoTracks.flatMap(t => t.segments.filter((s): s is VideoSegment => s.type === 'video'))
@@ -90,20 +90,20 @@ function convertVideoSegment(seg: CCSegment, materials: Map<string, CCMaterial>)
 
 // ── Text conversion ──────────────────────────────────────────────────────────
 
-function convertTextTracks(tracks: CCTrack[], materials: Map<string, CCMaterial>): Track[] {
+function convertTextTracks(tracks: CCTrack[], materials: Map<string, CCMaterial>, canvasWidth: number): Track[] {
   return tracks
     .map((track, i) => ({
       id: uid(),
       type: 'text' as const,
       label: i === 0 ? 'TEXT' : `TEXT ${i + 1}`,
       segments: track.segments
-        .map(s => convertTextSegment(s, materials))
+        .map(s => convertTextSegment(s, materials, canvasWidth))
         .filter((s): s is TextSegment => s !== null),
     }))
     .filter(t => t.segments.length > 0)
 }
 
-function convertTextSegment(seg: CCSegment, materials: Map<string, CCMaterial>): TextSegment | null {
+function convertTextSegment(seg: CCSegment, materials: Map<string, CCMaterial>, canvasWidth: number): TextSegment | null {
   const mat = materials.get(seg.material_id)
   if (!mat?.content) return null
 
@@ -114,13 +114,12 @@ function convertTextSegment(seg: CCSegment, materials: Map<string, CCMaterial>):
   if (!text) return null
 
   const style = parsed.styles?.[0]
-  const baseSize = style?.size ?? 15
   const scaleX = seg.clip?.scale.x ?? 1
 
-  // Empirical formula: size * scale * 6.2 when base=15, else fallback
-  const fontSize = baseSize === 15
-    ? Math.round(baseSize * scaleX * 6.2)
-    : Math.round(60 * scaleX)
+  // CapCut base size 15 at scale 1.0 ≈ 93px on 1080w canvas.
+  // Scale proportionally to canvas width so text looks the same size.
+  const basePx = 93 * (canvasWidth / 1080)
+  const fontSize = Math.round(basePx * scaleX)
 
   const fillColor = style?.fill?.content?.solid?.color
   const color = fillColor ? rgbArrayToHex(fillColor) : '#ffffff'
