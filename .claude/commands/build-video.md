@@ -403,6 +403,40 @@ Rules:
 
 ---
 
+## Importing CapCut templates
+
+Import a CapCut project as a Statonic template:
+```
+statonic template import "Project Name" [--id custom-slug] [--dry-run]
+```
+
+This creates a template with empty `clipCategory` fields on each slot. After importing, you must assign categories before the template can be used with `video build`.
+
+### Category assignment workflow
+
+1. Read the imported template:
+```
+statonic template list --json
+```
+
+2. Examine each slot's text content and position to determine its category:
+   - **First slot / longest duration** → typically `hook`
+   - **Technique labels** (GAMIFICATION, FEYNMAN TECHNIQUE, etc.) → `showcase`, `showcase/feynman`, or `showcase/scribble`
+   - **App/tool demos** → `gizmo`
+   - For ABC/split format: each of the 3 simultaneous clips at a given time point may share the same category or differ — use text content and the video's purpose to decide
+
+3. Update the template JSON directly with the assigned categories. Read the template file, update each slot's `clipCategory`, and write it back:
+```
+statonic project write '<updated-json>' <template-filename>
+```
+
+### Two formats
+
+- **Sequential** (1 video track): standard hook → body flow. Segments play in order.
+- **ABC/split** (3+ video tracks): vertical thirds layout. Multiple clips play simultaneously at different Y positions (`clipY`). Each video track has its own segments. The `clipY` on each segment determines its screen position.
+
+---
+
 ## Notes on reel analysis
 
 The scenes Claude detects via `reel analyze` sometimes overcounts — a single Gizmo clip with multiple flashcard cuts gets detected as multiple logical scenes when it's really one "gizmo reveal" slot. When building templates, treat all post-hook Gizmo footage as one slot regardless of internal cuts.

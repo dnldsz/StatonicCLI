@@ -6,6 +6,7 @@ import { cmdSegmentUpdate, cmdSegmentDelete, cmdSegmentAddText, cmdSegmentAddZoo
 import { cmdPreview, cmdFrames, cmdVideoInfo } from './commands/preview.js'
 import { cmdClipAnalyze, cmdClipUpdate, cmdClipList } from './commands/clip.js'
 import { cmdTemplateList } from './commands/template.js'
+import { cmdTemplateImport } from './commands/template-import.js'
 import { cmdAccountList, cmdAccountSet, cmdAccountCreate } from './commands/account.js'
 import { cmdAudioFind, cmdAudioExtractReel, cmdAudioList } from './commands/audio.js'
 import { cmdHookGenerate, cmdHookLearn } from './commands/hook.js'
@@ -48,6 +49,7 @@ CLIP LIBRARY:
 
 TEMPLATES:
   template list [--json]
+  template import <capcut-project-name> [--id <id>] [--dry-run]
 
 HOOKS:
   hook generate <topic>
@@ -129,6 +131,7 @@ async function main(): Promise<void> {
     case 'template':
       switch (sub) {
         case 'list': return cmdTemplateList(rest)
+        case 'import': return cmdTemplateImport(rest)
         default: console.error(`Unknown template subcommand: ${sub}`); process.exit(1)
       }
       break
