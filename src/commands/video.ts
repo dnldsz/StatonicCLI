@@ -6,6 +6,7 @@ import {
   getProjectsDir, getAudioLibraryDir,
 } from '../config.js'
 import { uid, saveProject, readProject, snapToFrame, findSegment } from '../project.js'
+import { categoryMatches } from 'statonic-core'
 import type { Project, TemplateMeta, Track, VideoSegment } from '../types.js'
 import { renderPreview } from '../ffmpeg.js'
 import { telegramSendDocument } from './telegram.js'
@@ -90,10 +91,9 @@ function pickClip(
   }
 
   // Always include subcategory clips (e.g. "showcase" includes "showcase/feynman")
-  let pool: ClipEntry[] = [...(byCategory[category] || [])]
-  const prefix = category + '/'
+  let pool: ClipEntry[] = []
   for (const [cat, clips] of Object.entries(byCategory)) {
-    if (cat.startsWith(prefix)) pool.push(...clips)
+    if (categoryMatches(category, cat)) pool.push(...clips)
   }
 
   if (opts?.usedIds?.size) {

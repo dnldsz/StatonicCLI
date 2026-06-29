@@ -3,6 +3,7 @@ import { join, extname, basename } from 'path'
 import { getClipLibraryDir, getActiveAccountId } from '../config.js'
 import { getVideoInfo } from '../ffmpeg.js'
 import { uid } from '../project.js'
+import { categoryMatches } from 'statonic-core'
 import type { ClipMetadata } from '../types.js'
 
 export function cmdClipAnalyze(args: string[]): void {
@@ -108,7 +109,7 @@ export function cmdClipList(args: string[]): void {
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'))
 
       // Hierarchical category filter: "showcase" matches "showcase/scribble" etc.
-      if (category && meta.category !== category && !meta.category.startsWith(category + '/')) continue
+      if (category && !categoryMatches(category, meta.category)) continue
 
       // Fix stale path — construct from filesystem
       const files = readdirSync(clipDir).filter((f: string) => /\.(mp4|mov|m4v)$/i.test(f))
